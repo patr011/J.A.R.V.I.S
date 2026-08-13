@@ -74,6 +74,7 @@ class TextToSpeech:
         self._thread: threading.Thread | None = None
         self._speaking = threading.Event()
         self._stop_flag = threading.Event()
+        self._failures = 0
         self.error: str = "" if self.available else (
             "pyttsx3 no está instalado (pip install pyttsx3)."
         )
@@ -183,8 +184,31 @@ class TextToSpeech:
                 return
 
     def _worker(self) -> None:
-        if not self._init_engine():
-            return
+        # La voz de Windows (SAPI5) se maneja por COM, y COM hay que
+        # inicializarlo EN CADA HILO que lo use. Sin esto, crear el motor
+        # dentro de este hilo falla y el asistente se queda mudo sin decir
+        # por que. Es la causa mas habitual de "no se oye nada".
+        com_ready = False
+        try:
+            import comtypes
+            comtypes.CoInitialize()
+            com_ready = True
+        except Exception:
+            pass
+
+        try:
+            if not self._init_engine():
+                return
+            self._speak_loop()
+        finally:
+            if com_ready:
+                try:
+                    import comtypes
+                    comtypes.CoUninitialize()
+                except Exception:
+                    pass
+
+    def _speak_loop(self) -> None:
         while not self._stop_flag.is_set():
             item = self._queue.get()
             if item is None:
@@ -204,7 +228,16 @@ class TextToSpeech:
                     pass
                 self._init_engine()
             except Exception as exc:                 # pragma: no cover
-                print(f"[voz] Error al hablar: {exc}")
+                # Con pythonw.exe no hay consola donde ver esto, asi que el
+                # error se guarda para que la ventana pueda mostrarlo.
+                self.error = f"Error al hablar: {type(exc).__name__}: {exc}"
+                self._failures += 1
+                print(f"[voz] {self.error}")
+                if self._failures >= 3:
+                    self.error = (f"La voz ha fallado {self._failures} veces y se desactiva. "
+                                  f"Último error: {exc}")
+                    self.enabled = False
+                    break
             finally:
                 self._speaking.clear()
                 if self.on_state_change:

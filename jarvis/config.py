@@ -34,7 +34,7 @@ DEFAULTS: dict[str, Any] = {
     # ---- Ollama ----
     "ollama": {
         "host": "http://localhost:11434",
-        "model": "qwen2.5:7b",       # cabe entero en los 8 GB de VRAM de una RTX 5050
+        "model": "llama3.1:8b",      # cabe entero en los 8 GB de VRAM de una RTX 5050
         "temperature": 0.7,
         # Cuanta conversacion recuerda el modelo. 8192 va sobrado con GPU
         # dedicada; en un equipo sin GPU bajalo a 4096 para que no se ralentice.

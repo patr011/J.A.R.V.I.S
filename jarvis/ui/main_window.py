@@ -72,6 +72,7 @@ class JarvisWindow(QWidget):
         self._listener: ListenWorker | None = None
         self._drag_pos: QPoint | None = None
         self._mic_ready = False
+        self._last_voice_error = ""
 
         self._build_ui()
         self._wire_shortcuts()
@@ -485,6 +486,15 @@ class JarvisWindow(QWidget):
 
     def _poll_voice_state(self) -> None:
         """Sincroniza el reactor y la onda con lo que hace la voz."""
+        # El motor de voz vive en otro hilo: si falla al arrancar o al hablar,
+        # no puede avisar por si mismo. Aqui se recoge el error y se enseña
+        # una sola vez, para que no se quede mudo sin explicacion.
+        if self.tts.error and self.tts.error != self._last_voice_error:
+            self._last_voice_error = self.tts.error
+            self.chat.add_message("system", f"Voz: {self.tts.error}")
+            self.voice_label.setText(f"Voz: {self.tts.error}")
+            self.voice_button.setChecked(self.tts.enabled)
+
         # `is_busy` incluye las frases aun en cola: si se usara `is_speaking`
         # el reactor parpadearia entre "hablando" y "en espera" en el hueco
         # que hay antes de que el motor de voz arranque.

@@ -37,7 +37,10 @@ animados y un reactor arc que reacciona a lo que está haciendo el asistente.
 |---|---|
 | **Abrir programas** | «abre Chrome», «inicia Spotify», «abre la calculadora», «ejecuta Word» |
 | **Archivos y carpetas** | «abre la carpeta descargas», «busca el archivo presupuesto», «abre mis documentos» |
-| **Páginas web** | «abre YouTube», «abre google.com», «busca gatos en Google», «reproduce lofi en YouTube» |
+| **Páginas web** | «abre YouTube», «abre google.com», «busca gatos en Google» |
+| **Música** | «pon Bohemian Rhapsody» (la reproduce de verdad), «pon música», «pausa», «siguiente canción» |
+| **El tiempo** | «¿qué tiempo hace?», «el clima en Valencia», «¿va a llover?» |
+| **Cuentas** | «cuánto es 7 + 39», «el 20 por ciento de 350», «raíz de 144» |
 | **Volumen** | «sube el volumen», «baja el volumen 20», «volumen al 40», «silencia» |
 | **Brillo** | «sube el brillo», «brillo al 70», «baja el brillo» |
 | **Energía** ⚠️ | «apaga el equipo», «reinicia», «suspende», «bloquea el equipo», «cancela el apagado» |
@@ -211,7 +214,12 @@ concreto con el comando exacto para descargarlo. Esta es la tabla que usa:
 | **Menos de 8 GB de RAM** | `llama3.2:1b` | ~1,3 GB | Muy rápido, respuestas sencillas. Es lo que hay que usar en equipos justos. |
 | **8 – 16 GB de RAM** | `llama3.2:3b` | ~2,0 GB | **La opción recomendada para la mayoría.** Buen equilibrio entre velocidad y calidad. |
 | **16 GB o más** | `llama3.1:8b` | ~4,7 GB | Respuestas claramente mejores, tarda unos segundos más en CPU. |
-| **16 GB+ y GPU dedicada** (RTX/GTX/Radeon RX) | `qwen2.5:7b` | ~4,7 GB | Muy buena calidad y casi instantáneo, porque la GPU hace el trabajo. **Es el que viene configurado por defecto.** |
+| **16 GB+ y GPU dedicada** (RTX/GTX/Radeon RX) | `llama3.1:8b` | ~4,7 GB | Muy buena calidad y casi instantáneo, porque la GPU hace el trabajo. **Es el que viene configurado por defecto.** |
+
+> **¿Por qué Llama y no Qwen?** Qwen 2.5 puntúa muy alto en las comparativas,
+> pero al escribir en español intercala caracteres chinos de vez en cuando. En
+> un asistente que además lee sus respuestas en voz alta, eso no vale. Llama
+> 3.1 es multilingüe de forma oficial y no tiene ese problema.
 
 > Con una gráfica de **8 GB de VRAM** (RTX 5050, 4060, 3070…) un modelo de
 > 7B u 8B cabe entero en la tarjeta, que es justo lo que hace que las
@@ -275,6 +283,12 @@ python main.py --modelo llama3.1:8b   REM usar otro modelo
 
 **Por voz:** pulsa el botón **🎙 HABLAR** (o la tecla **F2**), di la orden y
 espera. Lo que has dicho aparece en la conversación y se ejecuta solo.
+
+**Por voz, con el dictado de Windows (suele funcionar mejor):** pon el cursor
+en la caja de texto y pulsa **`Windows + H`**. Se abre el dictado propio de
+Windows y lo que digas se escribe directamente en la caja; pulsa Enter y ya.
+Reconoce mejor que el micrófono integrado del asistente, funciona sin
+conexión y no depende de PyAudio. Si el botón 🎙 te da problemas, usa esto.
 
 **Atajos de teclado:**
 
@@ -466,10 +480,32 @@ texto, solo se desactiva el botón del micrófono.
 <summary><b>No se oye la voz del asistente</b></summary>
 
 1. Comprueba que el botón **🔊 VOZ** está activado.
-2. Mira qué voces tienes: `python main.py --voces`.
-3. Si no aparece ninguna voz en español, instálala en
+2. Mira la conversación: si el motor de voz falla, el asistente lo escribe
+   ahora como mensaje de sistema con el error concreto.
+3. Mira qué voces tienes: `python main.py --voces`.
+4. Si no aparece ninguna voz en español, instálala en
    *Configuración → Hora e idioma → Voz → Agregar voces*.
-4. Copia el `id` de la voz que quieras en `voice.voice_id` del `config.json`.
+5. Copia el `id` de la voz que quieras en `voice.voice_id` del `config.json`.
+6. Sube el volumen del sistema y comprueba que Windows no tiene la
+   aplicación silenciada en el *Mezclador de volumen*.
+</details>
+
+<details>
+<summary><b>El modelo mezcla idiomas o dice que "ya lo está haciendo" sin hacer nada</b></summary>
+
+Son dos vicios típicos de algunos modelos:
+
+- **Caracteres chinos sueltos**: le pasa a Qwen escribiendo en español.
+  Cámbiate a Llama: `ollama pull llama3.1:8b` y luego
+  `python main.py --modelo llama3.1:8b`.
+- **Fingir acciones** («Consultando el servicio…», «Iniciando conexión…»):
+  el modelo no ejecuta nada, de eso se encarga el programa antes de llegar a
+  él. Las instrucciones del asistente ya se lo prohíben expresamente; si aun
+  así lo hace, es señal de que el modelo se te ha quedado corto.
+
+Recuerda que las órdenes reales (abrir programas, música, el tiempo, cuentas)
+**no pasan por el modelo**: las resuelve el propio programa, así que esas
+siempre son de fiar.
 </details>
 
 <details>

@@ -15,7 +15,7 @@ import re
 from typing import Callable
 
 from ..config import config
-from . import files, system, web
+from . import calc, files, system, weather, web
 from .apps import launcher
 from .base import CommandResult, normalize, strip_filler
 
@@ -311,6 +311,30 @@ class CommandRouter:
     # ------------------------------------------------------------------
 
     def _info(self, raw: str, norm: str) -> CommandResult | None:
+        # --- El tiempo: se consulta de verdad, no se le pregunta al modelo ---
+        if re.search(r"\b(clima|tiempo|temperatura|llover|llueve|lluvia|"
+                     r"pronostico|hace frio|hace calor|grados)\b", norm):
+            # "¿cuánto tiempo llevo aquí?" no es una consulta del tiempo.
+            if re.search(r"\b(cuanto tiempo|hace tiempo|tiempo libre|al mismo tiempo|"
+                         r"perder el tiempo|tiempo que)\b", norm):
+                return None
+            ciudad = ""
+            m = re.search(r"\ben\s+([a-záéíóúñü .'-]+)$", norm)
+            if m:
+                ciudad = m.group(1).strip(" .?¿!")
+            return weather.get_weather(ciudad)
+
+        # --- Cuentas: las resuelve el programa, no el modelo ---
+        if re.match(r"^(cuanto es|cuanto son|calcula|calcular|cuanto vale)\b", norm) or \
+                calc.looks_like_math(norm):
+            result = calc.calculate(raw)
+            if result.ok:
+                return result
+            # Si no era una cuenta de verdad, que conteste el modelo.
+            if not re.match(r"^(cuanto es|cuanto son|calcula|calcular)\b", norm):
+                return None
+            return result
+
         if re.search(r"\bque hora es\b|\bdime la hora\b|\bla hora\b$", norm):
             return system.tell_time()
 
@@ -436,6 +460,10 @@ def help_text() -> str:
         "   · «sube el brillo», «brillo al 70»\n"
         "   · «apaga el equipo», «reinicia», «suspende», «bloquea el equipo»\n"
         "   · «cancela el apagado», «estado del sistema», «captura de pantalla»\n"
+        "\n  INFORMACIÓN\n"
+        "   · «¿qué tiempo hace?», «el clima en Valencia», «¿va a llover?»\n"
+        "   · «cuánto es 7 + 39», «el 20 por ciento de 350», «raíz de 144»\n"
+        "   · «qué hora es», «qué día es hoy»\n"
         "\n  MEMORIA\n"
         "   · «recuerda que mañana tengo dentista», «¿qué te dije?», «olvida todo»\n"
         "\n  CONVERSACIÓN\n"

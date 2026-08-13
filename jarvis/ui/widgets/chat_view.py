@@ -10,7 +10,7 @@ import html
 from datetime import datetime
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QTextBlockFormat, QTextCursor
+from PyQt6.QtGui import QColor, QTextBlockFormat, QTextCharFormat, QTextCursor
 from PyQt6.QtWidgets import QTextBrowser, QWidget
 
 from ..theme import theme
@@ -40,12 +40,18 @@ class ChatView(QTextBrowser):
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _escape(text: str) -> str:
-        """Texto plano -> HTML, respetando saltos de linea y sangrias."""
-        escaped = html.escape(text)
-        escaped = escaped.replace("\n", "<br>")
-        escaped = escaped.replace("   ", "&nbsp;&nbsp;&nbsp;")
-        return escaped
+    def _text_format(color: str) -> QTextCharFormat:
+        """Formato de color para insertar texto plano.
+
+        El texto del asistente NO se inserta como HTML: el modelo escribe
+        palabra a palabra y cada fragmento suele empezar por un espacio
+        (" el", " servicio"). HTML colapsa esos espacios al principio de
+        cada insercion y las palabras acaban pegadas unas a otras. Con
+        insertText el texto entra tal cual, espacios incluidos.
+        """
+        fmt = QTextCharFormat()
+        fmt.setForeground(QColor(color))
+        return fmt
 
     def _at_bottom(self) -> bool:
         bar = self.verticalScrollBar()
@@ -96,9 +102,7 @@ class ChatView(QTextBrowser):
         cursor.insertHtml(self._header_html(role))
 
         cursor = self._new_block(top_margin=2.0, left_margin=12.0)
-        cursor.insertHtml(
-            f'<span style="color:{style["color"]};">{self._escape(text)}</span>'
-        )
+        cursor.insertText(text, self._text_format(style["color"]))
         self.setTextCursor(cursor)
         if stick:
             self._scroll_to_bottom()
@@ -133,9 +137,7 @@ class ChatView(QTextBrowser):
         stick = self._at_bottom()
         cursor = self.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
-        cursor.insertHtml(
-            f'<span style="color:{self._stream_color};">{self._escape(token)}</span>'
-        )
+        cursor.insertText(token, self._text_format(self._stream_color))
         if stick:
             self._scroll_to_bottom()
 
