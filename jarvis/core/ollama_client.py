@@ -193,6 +193,36 @@ class OllamaClient:
         except requests.RequestException:
             return False
 
+    def start_server(self) -> tuple[bool, str]:
+        """Intenta arrancar Ollama si esta instalado pero parado.
+
+        Es lo primero que haria el usuario a mano, asi que se hace por el.
+        """
+        import shutil
+        import subprocess
+        import sys
+        import time
+
+        if self.is_running():
+            return True, "Ollama ya estaba en marcha."
+        if shutil.which("ollama") is None:
+            return False, ("Ollama no está instalado. Descárguelo de "
+                           "https://ollama.com/download")
+        try:
+            kwargs = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
+            if sys.platform == "win32":
+                kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            subprocess.Popen(["ollama", "serve"], **kwargs)
+        except (OSError, ValueError) as exc:
+            return False, f"No he podido arrancar Ollama: {exc}"
+
+        # El servidor tarda un par de segundos en aceptar conexiones.
+        for _ in range(12):
+            time.sleep(0.5)
+            if self.is_running():
+                return True, "He arrancado Ollama."
+        return False, "He lanzado Ollama pero todavía no responde. Inténtelo en unos segundos."
+
     def list_models(self) -> list[str]:
         """Modelos descargados en este equipo."""
         try:
@@ -237,6 +267,7 @@ class OllamaClient:
         self,
         messages: list[dict[str, str]],
         on_token: Callable[[str], None] | None = None,
+        retrying: bool = False,
     ) -> str:
         """Envia la conversacion y devuelve la respuesta completa.
 
@@ -264,9 +295,17 @@ class OllamaClient:
                 timeout=(10, self.timeout),
             ) as response:
                 if response.status_code == 404:
+                    # Decir cuales SI hay ahorra al usuario ir a mirarlo.
+                    try:
+                        disponibles = self.list_models()
+                    except OllamaError:
+                        disponibles = []
+                    alternativa = (f"\nModelos que sí tiene: {', '.join(disponibles)}."
+                                   if disponibles else "")
                     raise OllamaError(
                         f"El modelo «{self.model}» no está descargado. "
                         f"Abre una terminal y ejecuta:  ollama pull {self.model}"
+                        + alternativa
                     )
                 response.raise_for_status()
 
@@ -289,8 +328,15 @@ class OllamaClient:
                     if data.get("done"):
                         break
         except requests.ConnectionError as exc:
+            # Ollama se apaga solo tras un rato sin uso, y tambien puede
+            # haberse reiniciado. Antes de dar error, se intenta levantarlo
+            # y repetir la peticion una vez: para el usuario es transparente.
+            if not retrying:
+                arrancado, _ = self.start_server()
+                if arrancado:
+                    return self.chat_stream(messages, on_token=on_token, retrying=True)
             raise OllamaError(
-                "No puedo conectar con Ollama. Comprueba que este instalado y "
+                "No puedo conectar con Ollama. Comprueba que esté instalado y "
                 "en marcha (abre una terminal y escribe:  ollama serve )."
             ) from exc
         except requests.Timeout as exc:

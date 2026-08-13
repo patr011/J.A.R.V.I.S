@@ -53,8 +53,103 @@ class Theme:
             font-size: {self.font_size}pt;
         }}
 
-        #root {{
+        #root, QDialog {{
             background-color: {bg};
+        }}
+
+        /* ---------- Controles de formulario (panel de ajustes) ---------- */
+        QComboBox, QSpinBox, QDoubleSpinBox {{
+            background-color: {self.rgba(panel, 0.85)};
+            border: 1px solid {self.rgba(a, 0.35)};
+            border-radius: 3px;
+            padding: 6px 10px;
+            color: {text};
+            min-height: 20px;
+        }}
+        QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus {{
+            border: 1px solid {a};
+        }}
+        QComboBox::drop-down {{
+            border: none;
+            width: 22px;
+        }}
+        QComboBox::down-arrow {{
+            image: none;
+            border-left: 4px solid transparent;
+            border-right: 4px solid transparent;
+            border-top: 5px solid {a};
+            margin-right: 8px;
+        }}
+        QComboBox QAbstractItemView {{
+            background-color: {panel};
+            border: 1px solid {a};
+            color: {text};
+            selection-background-color: {self.rgba(a, 0.35)};
+            outline: none;
+        }}
+        QSpinBox::up-button, QSpinBox::down-button {{
+            background-color: {self.rgba(a, 0.15)};
+            border: none;
+            width: 16px;
+        }}
+        QSpinBox::up-button:hover, QSpinBox::down-button:hover {{
+            background-color: {self.rgba(a, 0.35)};
+        }}
+
+        QCheckBox {{
+            color: {text};
+            spacing: 8px;
+        }}
+        QCheckBox::indicator {{
+            width: 15px;
+            height: 15px;
+            border: 1px solid {self.rgba(a, 0.55)};
+            border-radius: 2px;
+            background-color: {self.rgba(panel, 0.9)};
+        }}
+        QCheckBox::indicator:checked {{
+            background-color: {a};
+            border: 1px solid {a};
+        }}
+
+        QSlider::groove:horizontal {{
+            height: 5px;
+            background: {self.rgba(a, 0.20)};
+            border-radius: 2px;
+        }}
+        QSlider::sub-page:horizontal {{
+            background: {self.rgba(a, 0.75)};
+            border-radius: 2px;
+        }}
+        QSlider::handle:horizontal {{
+            background: {a};
+            width: 13px;
+            margin: -5px 0;
+            border-radius: 6px;
+        }}
+
+        /* ---------- Pestañas ---------- */
+        QTabWidget::pane {{
+            border: 1px solid {self.rgba(a, 0.28)};
+            border-radius: 3px;
+            top: -1px;
+        }}
+        QTabBar::tab {{
+            background: transparent;
+            color: {self.muted};
+            border: 1px solid transparent;
+            border-bottom: 1px solid {self.rgba(a, 0.28)};
+            padding: 8px 18px;
+            letter-spacing: 1px;
+        }}
+        QTabBar::tab:hover {{
+            color: {a};
+        }}
+        QTabBar::tab:selected {{
+            color: {a};
+            border: 1px solid {self.rgba(a, 0.45)};
+            border-bottom: 1px solid {bg};
+            background: {self.rgba(a, 0.10)};
         }}
 
         /* ---------- Paneles ---------- */

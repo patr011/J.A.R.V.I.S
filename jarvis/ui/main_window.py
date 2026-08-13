@@ -139,6 +139,13 @@ class JarvisWindow(QWidget):
         minimize.setToolTip("Minimizar")
         minimize.clicked.connect(self.showMinimized)
 
+        ajustes = QPushButton("⚙")
+        ajustes.setObjectName("titleBarButton")
+        ajustes.setToolTip("Ajustes (Ctrl+,)")
+        ajustes.clicked.connect(self.open_settings)
+        ajustes.setFixedWidth(42)
+        bar.addWidget(ajustes)
+
         maximize = QPushButton("□")
         maximize.setObjectName("titleBarButton")
         maximize.setToolTip("Maximizar / restaurar")
@@ -280,6 +287,7 @@ class JarvisWindow(QWidget):
         QShortcut(QKeySequence("Ctrl+L"), self, self._clear_chat)
         QShortcut(QKeySequence("Esc"), self, self._stop_everything)
         QShortcut(QKeySequence("Ctrl+Q"), self, self.close)
+        QShortcut(QKeySequence("Ctrl+,"), self, self.open_settings)
 
     def _start_timers(self) -> None:
         self._clock_timer = QTimer(self)
@@ -688,6 +696,38 @@ class JarvisWindow(QWidget):
         if self.chat.streaming:
             self.chat.end_stream()
         self._set_state("idle")
+
+    @pyqtSlot()
+    def open_settings(self) -> None:
+        """Abre el panel de ajustes y aplica lo que se pueda en caliente."""
+        from .settings_dialog import SettingsDialog
+
+        try:
+            modelos = self.llm.list_models()
+        except Exception:
+            modelos = []
+
+        dialogo = SettingsDialog(self, modelos=modelos, voces=self.tts.list_voices())
+        if not dialogo.exec():
+            return
+
+        # Lo que se puede aplicar sin reiniciar, se aplica ya.
+        nuevo_modelo = str(config.get("ollama.model", self.llm.model))
+        if nuevo_modelo != self.llm.model:
+            self.llm.model = nuevo_modelo
+            self.model_label.setText(f"Ollama: en línea\nModelo: {nuevo_modelo}")
+            self.chat.add_message("system", f"Modelo cambiado a {nuevo_modelo}.")
+
+        self.memory.max_turns = int(config.get("memory.max_turns", 40))
+        self.tts.set_enabled(bool(config.get("voice.tts_enabled", True)))
+        self.voice_button.setChecked(self.tts.enabled)
+
+        if dialogo.necesita_reinicio:
+            self.chat.add_message(
+                "system",
+                "Ajustes guardados. Los cambios de aspecto se verán al reiniciar el asistente.")
+        else:
+            self.chat.add_message("system", "Ajustes guardados.")
 
     def _toggle_maximized(self) -> None:
         if self.isMaximized():
