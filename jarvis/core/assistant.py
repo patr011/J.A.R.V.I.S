@@ -19,6 +19,7 @@ from typing import Any, Callable
 
 from ..commands.base import CommandResult
 from ..commands.registry import CommandRouter, is_affirmative, is_negative
+from ..commands.reminders import ReminderManager
 from ..config import config
 from .memory import Memory
 from .ollama_client import OllamaClient, OllamaError, build_system_prompt
@@ -36,10 +37,12 @@ class Response:
 
 
 class Assistant:
-    def __init__(self, memory: Memory | None = None, llm: OllamaClient | None = None) -> None:
+    def __init__(self, memory: Memory | None = None, llm: OllamaClient | None = None,
+                 reminders: ReminderManager | None = None) -> None:
         self.memory = memory or Memory()
         self.llm = llm or OllamaClient()
-        self.router = CommandRouter(memory=self.memory)
+        self.reminders = reminders or ReminderManager()
+        self.router = CommandRouter(memory=self.memory, reminder_manager=self.reminders)
         self._pending: CommandResult | None = None
         self.busy = False
 

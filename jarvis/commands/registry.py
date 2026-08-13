@@ -15,7 +15,7 @@ import re
 from typing import Callable
 
 from ..config import config
-from . import calc, files, system, weather, web
+from . import calc, files, reminders, system, weather, web
 from .apps import launcher
 from .base import CommandResult, normalize, strip_filler
 
@@ -76,8 +76,9 @@ def is_negative(text: str) -> bool:
 class CommandRouter:
     """Convierte una frase en la ejecucion de un comando."""
 
-    def __init__(self, memory=None) -> None:
+    def __init__(self, memory=None, reminder_manager=None) -> None:
         self.memory = memory
+        self.reminders = reminder_manager or reminders.ReminderManager()
 
     # -- entrada principal ----------------------------------------------
 
@@ -91,6 +92,7 @@ class CommandRouter:
             self._power,
             self._volume,
             self._brightness,
+            self._reminders,
             self._media,
             self._memory,
             self._info,
@@ -203,7 +205,14 @@ class CommandRouter:
         return CommandResult.done(system.brightness.status())
 
     # ------------------------------------------------------------------
-    # 4. Musica y reproduccion
+    # 4. Temporizadores, alarmas y recordatorios
+    # ------------------------------------------------------------------
+
+    def _reminders(self, raw: str, norm: str) -> CommandResult | None:
+        return reminders.handle(self.reminders, raw, norm)
+
+    # ------------------------------------------------------------------
+    # 5. Musica y reproduccion
     # ------------------------------------------------------------------
 
     def _media(self, raw: str, norm: str) -> CommandResult | None:
@@ -265,7 +274,7 @@ class CommandRouter:
         return web.play_song(target)
 
     # ------------------------------------------------------------------
-    # 5. Memoria
+    # 6. Memoria
     # ------------------------------------------------------------------
 
     def _memory(self, raw: str, norm: str) -> CommandResult | None:
@@ -307,7 +316,7 @@ class CommandRouter:
         return None
 
     # ------------------------------------------------------------------
-    # 5. Informacion / utilidades
+    # 7. Informacion / utilidades
     # ------------------------------------------------------------------
 
     def _info(self, raw: str, norm: str) -> CommandResult | None:
@@ -354,7 +363,7 @@ class CommandRouter:
         return None
 
     # ------------------------------------------------------------------
-    # 6. Web
+    # 8. Web
     # ------------------------------------------------------------------
 
     def _web(self, raw: str, norm: str) -> CommandResult | None:
@@ -388,7 +397,7 @@ class CommandRouter:
         return None
 
     # ------------------------------------------------------------------
-    # 7. Archivos y carpetas
+    # 9. Archivos y carpetas
     # ------------------------------------------------------------------
 
     def _files(self, raw: str, norm: str) -> CommandResult | None:
@@ -412,7 +421,7 @@ class CommandRouter:
         return None
 
     # ------------------------------------------------------------------
-    # 8. Aplicaciones
+    # 10. Aplicaciones
     # ------------------------------------------------------------------
 
     def _apps(self, raw: str, norm: str) -> CommandResult | None:
@@ -464,6 +473,10 @@ def help_text() -> str:
         "   · «¿qué tiempo hace?», «el clima en Valencia», «¿va a llover?»\n"
         "   · «cuánto es 7 + 39», «el 20 por ciento de 350», «raíz de 144»\n"
         "   · «qué hora es», «qué día es hoy»\n"
+        "\n  AVISOS\n"
+        "   · «ponme un temporizador de 10 minutos»\n"
+        "   · «recuérdame a las 17:30 que llame al dentista»\n"
+        "   · «despiértame a las 7», «¿qué alarmas tengo?», «cancela las alarmas»\n"
         "\n  MEMORIA\n"
         "   · «recuerda que mañana tengo dentista», «¿qué te dije?», «olvida todo»\n"
         "\n  CONVERSACIÓN\n"

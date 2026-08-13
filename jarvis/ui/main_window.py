@@ -17,8 +17,8 @@ from __future__ import annotations
 from PyQt6.QtCore import QPoint, Qt, QTimer, pyqtSlot
 from PyQt6.QtGui import QFont, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizeGrip,
-    QSizePolicy, QVBoxLayout, QWidget,
+    QApplication, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton,
+    QSizeGrip, QSizePolicy, QVBoxLayout, QWidget,
 )
 
 from ..commands import system as syscmd
@@ -196,7 +196,10 @@ class JarvisWindow(QWidget):
         self.memory_label.setObjectName("hint")
         self.voice_label = QLabel("Voz: —")
         self.voice_label.setObjectName("hint")
-        for label in (self.model_label, self.memory_label, self.voice_label):
+        self.reminder_label = QLabel("Sin avisos programados")
+        self.reminder_label.setObjectName("hint")
+        for label in (self.model_label, self.memory_label, self.voice_label,
+                      self.reminder_label):
             label.setWordWrap(True)
             ai_layout.addWidget(label)
         layout.addWidget(ai_frame)
@@ -282,6 +285,12 @@ class JarvisWindow(QWidget):
         self._voice_timer = QTimer(self)
         self._voice_timer.timeout.connect(self._poll_voice_state)
         self._voice_timer.start(200)
+
+        # Temporizadores y alarmas. Se comprueban desde aqui, en el hilo de la
+        # ventana, para poder escribir en el chat sin riesgos.
+        self._reminder_timer = QTimer(self)
+        self._reminder_timer.timeout.connect(self._check_reminders)
+        self._reminder_timer.start(1000)
 
         self._update_clock()
         self._update_stats()
@@ -560,6 +569,31 @@ class JarvisWindow(QWidget):
             self.bar_battery.set_value(0, text="n/d")
 
         self._update_memory_label()
+
+    def _check_reminders(self) -> None:
+        """Avisa cuando vence un temporizador o una alarma."""
+        if self._closing:
+            return
+        for aviso in self.assistant.reminders.check_due():
+            texto = self.assistant.reminders.announcement(aviso)
+            self.chat.add_message("assistant", "⏰  " + texto)
+            self.tts.say(texto)
+            self.memory.add_assistant(texto)
+            # Un parpadeo del reactor para que se note aunque estés en otra ventana.
+            self._set_state("speaking")
+            QApplication.alert(self, 3000)
+        self._update_reminder_label()
+
+    def _update_reminder_label(self) -> None:
+        pendientes = self.assistant.reminders.pending()
+        if not pendientes:
+            self.reminder_label.setText("Sin avisos programados")
+            self.reminder_label.setToolTip("")
+            return
+        siguiente = pendientes[0]
+        self.reminder_label.setText(
+            f"{len(pendientes)} aviso(s) · el próximo en {siguiente.describe_remaining()}")
+        self.reminder_label.setToolTip("\n".join(r.describe() for r in pendientes))
 
     def _update_memory_label(self) -> None:
         stats = self.memory.stats()
