@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+
+# Configuracion y memoria locales (se generan solos en ~/.jarvis)
+.jarvis/
+*.log
+
+# Editores
+.vscode/
+.idea/
+*.swp
+
+# Windows
+Thumbs.db
+desktop.ini
