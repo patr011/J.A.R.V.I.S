@@ -1,10 +1,13 @@
 # J.A.R.V.I.S. — Asistente de escritorio para Windows
 
 Un asistente personal que corre **entero en tu ordenador**, sin claves de API ni
-servicios de pago. Habla contigo, abre tus programas, busca tus archivos,
-controla el volumen y el brillo, apaga el equipo (pidiéndote confirmación
-antes) y contesta a cualquier pregunta usando un modelo de lenguaje local a
-través de **Ollama**.
+servicios de pago. Habla contigo, abre tus programas, busca tus archivos, pone
+música, te dice el tiempo, te avisa con temporizadores, controla el volumen y
+el brillo, apaga el equipo (pidiéndote confirmación antes) y contesta a
+cualquier pregunta usando un modelo de lenguaje local a través de **Ollama**.
+
+Responde por texto o por voz, y en modo manos libres basta con decir
+**«Oye JARVIS»**.
 
 Todo dentro de una interfaz estilo Iron Man: fondo oscuro, cian, círculos
 animados y un reactor arc que reacciona a lo que está haciendo el asistente.
@@ -27,7 +30,8 @@ animados y un reactor arc que reacciona a lo que está haciendo el asistente.
 4. [Cómo se usa](#4-cómo-se-usa)
 5. [Configuración](#5-configuración)
 6. [Problemas comunes](#6-problemas-comunes)
-7. [Cómo añadir tus propios comandos](#7-cómo-añadir-tus-propios-comandos)
+7. [Las pruebas](#7-las-pruebas)
+8. [Cómo añadir tus propios comandos](#8-cómo-añadir-tus-propios-comandos)
 
 ---
 
@@ -41,12 +45,22 @@ animados y un reactor arc que reacciona a lo que está haciendo el asistente.
 | **Música** | «pon Bohemian Rhapsody» (la reproduce de verdad), «pon música», «pausa», «siguiente canción» |
 | **El tiempo** | «¿qué tiempo hace?», «el clima en Valencia», «¿va a llover?» |
 | **Cuentas** | «cuánto es 7 + 39», «el 20 por ciento de 350», «raíz de 144» |
+| **Avisos** ⏰ | «ponme un temporizador de 10 minutos», «recuérdame a las 17:30 que llame al dentista», «despiértame a las 7» |
+| **Notas y listas** | «apunta leche en la lista de la compra», «lee mi lista de la compra», «quita leche de la compra» |
 | **Volumen** | «sube el volumen», «baja el volumen 20», «volumen al 40», «silencia» |
 | **Brillo** | «sube el brillo», «brillo al 70», «baja el brillo» |
 | **Energía** ⚠️ | «apaga el equipo», «reinicia», «suspende», «bloquea el equipo», «cancela el apagado» |
 | **Memoria** | «recuerda que mañana tengo dentista», «¿qué te dije?», «olvida todo» |
 | **Sistema** | «estado del sistema», «qué hora es», «captura de pantalla» |
 | **Cualquier otra cosa** | «¿por qué el cielo es azul?», «escríbeme un correo de disculpa», «explícame las listas en Python» |
+
+**Manos libres**: pulsa **F4** y a partir de ahí basta con decir **«Oye JARVIS,
+pon música»** sin tocar el teclado.
+
+**Lo que importa de todo esto**: las órdenes reales (abrir programas, música,
+el tiempo, las cuentas, los avisos) **no pasan por el modelo de lenguaje**.
+Las resuelve el propio programa, así que son instantáneas y no se inventan
+nada. El modelo solo entra cuando le preguntas algo de conversación.
 
 ⚠️ **Apagar, reiniciar y cerrar sesión siempre piden confirmación.** El
 asistente te pregunta «¿lo confirma?» y solo actúa si respondes *sí*. Además el
@@ -66,36 +80,45 @@ después preguntarle «¿cómo me llamo?». Lo que le pidas recordar con
 J.A.R.V.I.S/
 │
 ├── main.py                  ← ARRANCA AQUÍ. Conecta todas las piezas.
+├── probar.py                ← ejecuta las pruebas
 ├── requirements.txt         ← lista de librerías
 ├── instalar.bat             ← instalación automática (doble clic)
 ├── ejecutar.bat             ← arranca el asistente (doble clic)
 │
-└── jarvis/
-    ├── config.py            ← configuración (colores, modelo, alias, atajos)
-    │
-    ├── core/                ← el cerebro
-    │   ├── assistant.py     ← decide: ¿es un comando o una pregunta al modelo?
-    │   ├── memory.py        ← memoria de la conversación y notas permanentes
-    │   ├── ollama_client.py ← conexión con el modelo local de Ollama
-    │   └── speech.py        ← voz: pyttsx3 (hablar) y SpeechRecognition (oír)
-    │
-    ├── commands/            ← todo lo que puede hacer en tu equipo
-    │   ├── registry.py      ← interpreta la frase y llama al comando correcto
-    │   ├── apps.py          ← abrir programas instalados
-    │   ├── files.py         ← buscar y abrir archivos y carpetas
-    │   ├── system.py        ← volumen, brillo, apagar, reiniciar, suspender
-    │   ├── web.py           ← abrir webs y buscar en Google/YouTube
-    │   └── base.py          ← tipos comunes a todos los comandos
-    │
-    └── ui/                  ← la interfaz gráfica (PyQt6)
-        ├── main_window.py   ← la ventana principal
-        ├── theme.py         ← colores y hoja de estilos
-        ├── workers.py       ← hilos, para que la ventana nunca se congele
-        └── widgets/
-            ├── arc_reactor.py ← el círculo animado del centro
-            ├── chat_view.py   ← el área de conversación
-            ├── hud.py         ← rejilla de fondo y barras de estado
-            └── waveform.py    ← la onda de audio animada
+├── jarvis/
+│   ├── config.py            ← configuración (colores, modelo, alias, atajos)
+│   ├── logging_setup.py     ← registro de errores en ~/.jarvis/jarvis.log
+│   │
+│   ├── core/                ← el cerebro
+│   │   ├── assistant.py     ← decide: ¿es un comando o una pregunta al modelo?
+│   │   ├── memory.py        ← memoria de la conversación y notas permanentes
+│   │   ├── ollama_client.py ← conexión con el modelo local de Ollama
+│   │   └── speech.py        ← voz: hablar, oír y la palabra clave
+│   │
+│   ├── commands/            ← todo lo que puede hacer en tu equipo
+│   │   ├── registry.py      ← interpreta la frase y llama al comando correcto
+│   │   ├── apps.py          ← abrir programas instalados
+│   │   ├── files.py         ← buscar y abrir archivos y carpetas
+│   │   ├── system.py        ← volumen, brillo, multimedia, apagar, reiniciar
+│   │   ├── web.py           ← webs, búsquedas y reproducir canciones
+│   │   ├── weather.py       ← el tiempo (Open-Meteo, sin clave de API)
+│   │   ├── calc.py          ← calculadora segura
+│   │   ├── reminders.py     ← temporizadores, alarmas y recordatorios
+│   │   ├── notes.py         ← notas y listas
+│   │   └── base.py          ← tipos comunes a todos los comandos
+│   │
+│   └── ui/                  ← la interfaz gráfica (PyQt6)
+│       ├── main_window.py   ← la ventana principal
+│       ├── settings_dialog.py ← el panel de ajustes
+│       ├── theme.py         ← colores y hoja de estilos
+│       ├── workers.py       ← hilos, para que la ventana nunca se congele
+│       └── widgets/
+│           ├── arc_reactor.py ← el círculo animado del centro
+│           ├── chat_view.py   ← el área de conversación
+│           ├── hud.py         ← rejilla de fondo y barras de estado
+│           └── waveform.py    ← la onda de audio animada
+│
+└── tests/                   ← 330 pruebas automáticas
 ```
 
 **La idea de la separación**: `commands/` no sabe nada de la interfaz,
@@ -290,14 +313,29 @@ Windows y lo que digas se escribe directamente en la caja; pulsa Enter y ya.
 Reconoce mejor que el micrófono integrado del asistente, funciona sin
 conexión y no depende de PyAudio. Si el botón 🎙 te da problemas, usa esto.
 
+**Manos libres:** pulsa **F4** (o el botón 👂). A partir de ahí el asistente
+escucha de fondo y responde cuando dices **«Oye JARVIS…»**:
+
+```
+Oye JARVIS, pon música
+Oye JARVIS, ¿qué tiempo hace?
+Oye JARVIS, ponme un temporizador de 10 minutos
+```
+
+Si dices solo «Oye JARVIS» se queda esperando a que le digas la orden. No
+escucha mientras habla (se oiría a sí mismo) y acepta las variantes que suele
+entender el reconocedor: *Yarvis*, *Jarbis*, *Travis*…
+
 **Atajos de teclado:**
 
 | Tecla | Qué hace |
 |---|---|
 | `Enter` | enviar el mensaje |
-| `F2` | dictar por micrófono |
+| `F2` | dictar por micrófono (una vez) |
+| `F4` | activar o desactivar el manos libres |
 | `Esc` | callar al asistente y detener la respuesta |
 | `Ctrl+L` | limpiar la conversación |
+| `Ctrl+,` | abrir los ajustes |
 | `Ctrl+Q` | cerrar |
 
 También puedes mover la ventana arrastrando la barra superior, y
@@ -319,13 +357,30 @@ maximizarla con doble clic en esa misma barra.
 
 ## 5. Configuración
 
-La primera vez que arrancas se crea el archivo:
+### Lo fácil: el panel de ajustes
+
+Pulsa el botón **⚙** de la barra superior (o **Ctrl+,**). Desde ahí cambias el
+modelo, la ciudad del tiempo, la voz, la palabra clave, el color del panel y
+las opciones de seguridad, sin tocar ningún archivo.
+
+![Panel de ajustes](docs/ajustes.png)
+
+El modelo y la voz se aplican al momento; los cambios de aspecto se ven al
+reiniciar el asistente (te lo avisa).
+
+### Lo avanzado: el archivo de configuración
+
+Para los alias de aplicaciones y los sitios web propios, edita:
 
 ```
 C:\Users\TU_USUARIO\.jarvis\config.json
 ```
 
-Ábrelo con el Bloc de notas para personalizarlo. Lo más útil:
+En esa misma carpeta están tus datos: `memoria.json` (lo que le pediste
+recordar), `avisos.json` (alarmas), `notas.json` (listas) y `jarvis.log`
+(el registro de errores).
+
+Lo más útil de editar a mano:
 
 ```jsonc
 {
@@ -375,6 +430,10 @@ Guarda el archivo y reinicia el asistente para que se apliquen los cambios.
 ---
 
 ## 6. Problemas comunes
+
+> **Antes de nada**: cuando algo falle, mira el registro de errores en
+> `C:\Users\TU_USUARIO\.jarvis\jarvis.log`. Como el asistente arranca sin
+> consola, ese archivo es donde queda apuntado todo lo que va mal.
 
 <details>
 <summary><b>«No detecto Ollama en marcha»</b></summary>
@@ -546,7 +605,34 @@ rejilla animada y el giro del reactor, y el consumo baja bastante.
 
 ---
 
-## 7. Cómo añadir tus propios comandos
+## 7. Las pruebas
+
+El proyecto trae 330 pruebas automáticas. Si tocas el código, ejecútalas
+antes de dar nada por bueno:
+
+```bat
+pip install pytest
+python probar.py
+```
+
+También puedes lanzar solo una parte:
+
+```bat
+python probar.py comandos      REM las que llevan "comandos" en el nombre
+python probar.py -v            REM con el detalle de cada prueba
+```
+
+Ninguna prueba toca tu sistema: no abre programas, no cambia el volumen, no
+usa internet y **no puede apagar el ordenador**. Tu memoria, tus notas y tus
+alarmas tampoco se tocan, porque se redirigen a una carpeta temporal.
+
+Hay dos grupos que conviene no romper nunca:
+
+- Que **«apaga la música» no apague el ordenador** y que apagar siempre pida
+  confirmación.
+- Que la **calculadora rechace código** en vez de ejecutarlo.
+
+## 8. Cómo añadir tus propios comandos
 
 Todo se hace en un solo sitio. Abre `jarvis/commands/registry.py` y busca el
 método que encaje (o crea uno nuevo). Por ejemplo, para añadir «modo cine»
