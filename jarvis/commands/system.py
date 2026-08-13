@@ -39,21 +39,45 @@ class VolumeController:
     def __init__(self) -> None:
         self._endpoint = None
         self.backend = "teclas multimedia"
+        self.error = ""
         if IS_WINDOWS:
             self._init_pycaw()
+        else:
+            self.error = "el control de volumen solo funciona en Windows"
 
     def _init_pycaw(self) -> None:
+        """Conecta con el mezclador de Windows.
+
+        Si algo falla se guarda el motivo en `self.error` en vez de callarlo:
+        sin eso, el panel se limita a poner «n/d» y no hay forma de saber si
+        falta la libreria, si el equipo no tiene tarjeta de sonido activa o
+        si es otra cosa.
+        """
         try:
             from ctypes import cast, POINTER
             from comtypes import CLSCTX_ALL
             from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+        except ImportError as exc:
+            self.error = f"falta la librería pycaw ({exc}). Instálala con: pip install pycaw comtypes"
+            return
 
+        try:
             devices = AudioUtilities.GetSpeakers()
             interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
             self._endpoint = cast(interface, POINTER(IAudioEndpointVolume))
             self.backend = "pycaw"
-        except Exception:
+        except Exception as exc:
             self._endpoint = None
+            self.error = f"{type(exc).__name__}: {exc}"
+
+    def retry(self) -> bool:
+        """Vuelve a intentar la conexión (útil si cambias de altavoces)."""
+        if not IS_WINDOWS:
+            return False
+        self._endpoint = None
+        self.error = ""
+        self._init_pycaw()
+        return self._endpoint is not None
 
     # -- plan B: teclas multimedia --------------------------------------
 
@@ -121,12 +145,99 @@ class VolumeController:
     def status(self) -> str:
         level = self.get_level()
         if level is None:
-            return "Volumen: no disponible"
+            detalle = f" ({self.error})" if self.error else ""
+            return (f"Volumen: no puedo leer el nivel{detalle}. "
+                    "Puedo subirlo y bajarlo igualmente con las teclas multimedia.")
         try:
             muted = bool(self._endpoint.GetMute()) if self._endpoint else False
         except Exception:
             muted = False
         return f"Volumen: {level}%{' (silenciado)' if muted else ''}"
+
+
+# --------------------------------------------------------------------------
+# Reproduccion (musica y video)
+# --------------------------------------------------------------------------
+
+def is_running(process_name: str) -> bool:
+    """¿Esta abierto ese programa? (por ejemplo 'spotify.exe')"""
+    try:
+        import psutil
+        needle = process_name.lower()
+        for proc in psutil.process_iter(["name"]):
+            name = (proc.info.get("name") or "").lower()
+            if name == needle:
+                return True
+    except Exception:
+        pass
+    return False
+
+
+class MediaController:
+    """Play, pausa y cambio de pista con las teclas multimedia de Windows.
+
+    Funciona sobre el reproductor que este sonando: Spotify, YouTube en el
+    navegador, el reproductor de Windows... Es el mismo mecanismo que usan
+    los botones de multimedia de los teclados.
+    """
+
+    VK_MEDIA_NEXT = 0xB0
+    VK_MEDIA_PREV = 0xB1
+    VK_MEDIA_STOP = 0xB2
+    VK_MEDIA_PLAY_PAUSE = 0xB3
+
+    def _tap(self, key: int) -> bool:
+        if not IS_WINDOWS:
+            return False
+        try:
+            ctypes.windll.user32.keybd_event(key, 0, 0, 0)
+            ctypes.windll.user32.keybd_event(key, 0, 2, 0)
+            return True
+        except Exception:
+            return False
+
+    def play_pause(self) -> CommandResult:
+        if not self._tap(self.VK_MEDIA_PLAY_PAUSE):
+            return CommandResult.fail("El control de reproducción solo funciona en Windows.")
+        return CommandResult.done("Listo.")
+
+    def next_track(self) -> CommandResult:
+        if not self._tap(self.VK_MEDIA_NEXT):
+            return CommandResult.fail("El control de reproducción solo funciona en Windows.")
+        return CommandResult.done("Siguiente pista.")
+
+    def previous_track(self) -> CommandResult:
+        if not self._tap(self.VK_MEDIA_PREV):
+            return CommandResult.fail("El control de reproducción solo funciona en Windows.")
+        return CommandResult.done("Pista anterior.")
+
+    def stop(self) -> CommandResult:
+        if not self._tap(self.VK_MEDIA_STOP):
+            return CommandResult.fail("El control de reproducción solo funciona en Windows.")
+        return CommandResult.done("Reproducción detenida.")
+
+    def play_music(self) -> CommandResult:
+        """«Pon música» sin decir qué: reanuda Spotify o lo abre.
+
+        Si Spotify ya está abierto basta con la tecla de play. Si no lo está,
+        se abre, pero no se puede pulsar play a ciegas: el programa tarda
+        varios segundos en cargar y la tecla se perdería. Por eso se avisa al
+        usuario en lugar de fingir que ha sonado algo.
+        """
+        if is_running("spotify.exe"):
+            self._tap(self.VK_MEDIA_PLAY_PAUSE)
+            return CommandResult.done("Reanudando la música en Spotify.")
+
+        from .apps import launcher
+        result = launcher.open_app("Spotify")
+        if result.ok:
+            return CommandResult.done(
+                "Abriendo Spotify. En cuanto cargue, dígame «play» y le doy a reproducir."
+            )
+        return CommandResult.fail(
+            "No encuentro Spotify instalado. Puede decirme «reproduce <lo que sea> "
+            "en YouTube» y se lo busco en el navegador."
+        )
 
 
 # --------------------------------------------------------------------------
@@ -389,3 +500,4 @@ def take_screenshot() -> CommandResult:
 volume = VolumeController()
 brightness = BrightnessController()
 power = PowerController()
+media = MediaController()

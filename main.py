@@ -115,6 +115,24 @@ def run_diagnostics() -> int:
         print("          Instálalo desde https://ollama.com/download")
         print("          y luego ejecuta en una terminal:  ollama serve")
 
+    print("\n--- CONTROL DEL SISTEMA ---")
+    from jarvis.commands.system import brightness, volume
+    nivel = volume.get_level()
+    if nivel is not None:
+        print(f"  [OK]    Volumen: {nivel}%  (usando {volume.backend})")
+    else:
+        print("  [FALLO] Volumen: no se puede leer el nivel")
+        if volume.error:
+            print(f"          Motivo: {volume.error}")
+        print("          Subir y bajar el volumen seguira funcionando con las teclas multimedia.")
+
+    nivel = brightness.get_level()
+    if nivel is not None:
+        print(f"  [OK]    Brillo: {nivel}%")
+    else:
+        print("  [AVISO] Brillo: no disponible")
+        print("          Normal en monitores de sobremesa: muchos no lo permiten por software.")
+
     print("\n--- VOZ ---")
     tts = TextToSpeech()
     print(f"  Texto a voz: {'disponible' if tts.available else tts.error}")

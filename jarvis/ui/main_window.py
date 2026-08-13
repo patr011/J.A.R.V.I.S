@@ -529,6 +529,11 @@ class JarvisWindow(QWidget):
         vol = syscmd.volume.get_level()
         self.bar_vol.set_value(vol if vol is not None else 0,
                                text="" if vol is not None else "n/d")
+        # Si sale «n/d», que al menos se pueda ver por qué al pasar el ratón.
+        self.bar_vol.setToolTip(
+            f"No puedo leer el nivel de volumen.\n{syscmd.volume.error}\n\n"
+            "Subirlo y bajarlo sí funciona."
+            if vol is None else f"Volumen: {vol}%  ({syscmd.volume.backend})")
 
         bright = syscmd.brightness.get_level()
         self.bar_bright.set_value(bright if bright is not None else 0,

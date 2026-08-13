@@ -91,6 +91,7 @@ class CommandRouter:
             self._power,
             self._volume,
             self._brightness,
+            self._media,
             self._memory,
             self._info,
             self._web,
@@ -202,7 +203,69 @@ class CommandRouter:
         return CommandResult.done(system.brightness.status())
 
     # ------------------------------------------------------------------
-    # 4. Memoria
+    # 4. Musica y reproduccion
+    # ------------------------------------------------------------------
+
+    def _media(self, raw: str, norm: str) -> CommandResult | None:
+        """Poner canciones y controlar lo que suena.
+
+        Va despues de volumen y brillo a proposito: asi «pon el volumen al 50»
+        se resuelve alli y no acaba buscando una cancion llamada «el volumen».
+        """
+        # --- controles del reproductor ---
+        if re.fullmatch(r"(dale\s+)?(play|reanuda|reanudar|continua|sigue)"
+                        r"(\s+(la\s+)?(musica|cancion|reproduccion))?", norm):
+            return system.media.play_pause()
+
+        if re.search(r"\b(pausa|pausar|pausala)\b", norm) or \
+                re.search(r"\b(para|paralo|deten|detener)\b.*\b(musica|cancion|reproduccion|video)\b", norm):
+            return system.media.play_pause()
+
+        # El adjetivo puede ir delante o detrás: «siguiente canción» y
+        # «canción siguiente» son la misma orden.
+        pista = r"(cancion|pista|tema|video)"
+        if re.search(rf"\b(siguiente|proxima|otra|cambia de)\b.*\b{pista}\b", norm) or \
+                re.search(rf"\b{pista}\s+(siguiente|proxima)\b", norm) or \
+                re.fullmatch(r"siguiente|pasa de cancion|salta", norm):
+            return system.media.next_track()
+
+        if re.search(rf"\b(anterior|previa|vuelve a la)\b.*\b{pista}\b", norm) or \
+                re.search(rf"\b{pista}\s+(anterior|previa)\b", norm) or \
+                re.fullmatch(r"anterior", norm):
+            return system.media.previous_track()
+
+        # --- poner algo ---
+        m = re.match(r"^(pon|ponme|reproduce|reproducir|escucha|escuchar|"
+                     r"quiero escuchar|quiero oir|pon una|pon la)\s+(.+)$", norm)
+        if not m:
+            return None
+
+        target = m.group(2).strip()
+
+        # ¿Ha dicho dónde? "... en youtube" / "... en spotify"
+        engine = ""
+        tail = re.search(r"\s+en\s+(youtube|spotify)$", target)
+        if tail:
+            engine = tail.group(1)
+            target = target[: tail.start()].strip()
+
+        # Quita el envoltorio: "la cancion de X" -> "X", "musica" -> ""
+        target = re.sub(r"^(la\s+|una\s+|algo\s+de\s+|un\s+)?"
+                        r"(cancion|cancion es|canciones|musica|tema|video|videoclip)\b"
+                        r"(\s+de\b|\s+llamada\b|\s+titulada\b)?", "", target).strip(" .,")
+
+        # "pon música" a secas: no hay canción concreta que buscar.
+        if not target:
+            if engine == "youtube":
+                return web.play_song("música para trabajar")
+            return system.media.play_music()
+
+        if engine == "spotify":
+            return web.open_in_spotify(target)
+        return web.play_song(target)
+
+    # ------------------------------------------------------------------
+    # 5. Memoria
     # ------------------------------------------------------------------
 
     def _memory(self, raw: str, norm: str) -> CommandResult | None:
@@ -289,11 +352,6 @@ class CommandRouter:
             # Sin buscador explicito: si es un sitio conocido lo abre, si no busca en Google.
             return web.open_site(term) if web.match_site(term) else web.search(term)
 
-        m = re.match(r"^(reproduce|pon|poner|escuchar|escucha)\s+(.+?)(\s+en\s+youtube)?$", norm)
-        if m and (m.group(3) or re.search(r"\b(cancion|musica|video|tema)\b", norm)):
-            term = re.sub(r"\b(la cancion|la musica|el video|el tema|de)\b", " ", m.group(2)).strip()
-            return web.play_on_youtube(term or m.group(2))
-
         # "abre la pagina X" / "abre youtube" / "abre google.com"
         m = re.match(r"^(abre|abrir|abreme|ve a|entra en|lanza|inicia|ir a)\s+(.+)$", norm)
         if m:
@@ -368,7 +426,11 @@ def help_text() -> str:
         "\n  ARCHIVOS Y CARPETAS\n"
         "   · «abre la carpeta descargas», «busca el archivo presupuesto»\n"
         "\n  WEB\n"
-        "   · «abre YouTube», «busca gatos en Google», «reproduce lofi en YouTube»\n"
+        "   · «abre YouTube», «busca gatos en Google»\n"
+        "\n  MÚSICA\n"
+        "   · «pon Bohemian Rhapsody» — la busca y la reproduce\n"
+        "   · «pon música» — reanuda o abre Spotify\n"
+        "   · «pon Shakira en Spotify», «pausa», «play», «siguiente canción»\n"
         "\n  SISTEMA\n"
         "   · «sube el volumen», «volumen al 40», «silencia»\n"
         "   · «sube el brillo», «brillo al 70»\n"
