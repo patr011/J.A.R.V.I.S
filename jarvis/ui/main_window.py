@@ -18,7 +18,7 @@ from PyQt6.QtCore import QPoint, Qt, QTimer, pyqtSlot
 from PyQt6.QtGui import QFont, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QApplication, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-    QSizeGrip, QSizePolicy, QVBoxLayout, QWidget,
+    QSizeGrip, QSizePolicy, QSystemTrayIcon, QVBoxLayout, QWidget,
 )
 
 from ..commands import system as syscmd
@@ -28,6 +28,7 @@ from ..core.memory import Memory
 from ..core.ollama_client import OllamaClient
 from ..core.speech import SpeechToText, TextToSpeech
 from .theme import theme
+from .tray import TrayIcon, build_icon
 from .widgets.arc_reactor import ArcReactor
 from .widgets.chat_view import ChatView
 from .widgets.hud import HudBackground, StatBar
@@ -75,8 +76,11 @@ class JarvisWindow(QWidget):
         self._mic_ready = False
         self._last_voice_error = ""
         self._closing = False
+        self._salir_de_verdad = False
+        self.tray: TrayIcon | None = None
 
         self._build_ui()
+        self._build_tray()
         self._wire_shortcuts()
         self._start_timers()
         self._boot()
@@ -277,6 +281,25 @@ class JarvisWindow(QWidget):
         footer.addWidget(grip, 0, Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignRight)
         return footer
 
+    # -- bandeja del sistema ----------------------------------------------
+
+    def _build_tray(self) -> None:
+        """Icono junto al reloj, si el escritorio lo permite."""
+        self.setWindowIcon(build_icon())
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            self.tray = None
+            return
+        try:
+            self.tray = TrayIcon(self)
+            self.tray.show()
+        except Exception:
+            self.tray = None
+
+    def quit_completely(self) -> None:
+        """Salir de verdad, no solo esconderse en la bandeja."""
+        self._salir_de_verdad = True
+        self.close()
+
     # ==================================================================
     # Atajos de teclado y temporizadores
     # ==================================================================
@@ -286,7 +309,7 @@ class JarvisWindow(QWidget):
         QShortcut(QKeySequence("F4"), self, self.wake_button.click)
         QShortcut(QKeySequence("Ctrl+L"), self, self._clear_chat)
         QShortcut(QKeySequence("Esc"), self, self._stop_everything)
-        QShortcut(QKeySequence("Ctrl+Q"), self, self.close)
+        QShortcut(QKeySequence("Ctrl+Q"), self, self.quit_completely)
         QShortcut(QKeySequence("Ctrl+,"), self, self.open_settings)
 
     def _start_timers(self) -> None:
@@ -622,6 +645,8 @@ class JarvisWindow(QWidget):
     def _set_state(self, state: str) -> None:
         self.reactor.set_state(state)
         self.state_label.setText(STATE_TEXT.get(state, state.upper()))
+        if self.tray is not None:
+            self.tray.actualizar_estado(state)
 
     def _update_clock(self) -> None:
         from datetime import datetime
@@ -769,6 +794,18 @@ class JarvisWindow(QWidget):
             self._toggle_maximized()
 
     def closeEvent(self, event) -> None:            # noqa: N802
+        # Con icono en la bandeja, cerrar la ventana solo la esconde: el
+        # asistente sigue disponible, que es de lo que se trata. Para salir
+        # de verdad estan el menu de la bandeja y Ctrl+Q.
+        if self.tray is not None and not self._salir_de_verdad:
+            event.ignore()
+            self.hide()
+            self.tray.showMessage(
+                "J.A.R.V.I.S. sigue aquí",
+                "Sigo en la bandeja del sistema. Pulsa el icono para volver.",
+                build_icon(), 4000)
+            return
+
         self.tts.stop()
         self.assistant.cancel_generation()
         if self._waker is not None:

@@ -39,12 +39,13 @@ animados y un reactor arc que reacciona a lo que está haciendo el asistente.
 
 | Categoría | Ejemplos de lo que le puedes decir |
 |---|---|
-| **Abrir programas** | «abre Chrome», «inicia Spotify», «abre la calculadora», «ejecuta Word» |
+| **Abrir y cerrar programas** | «abre Chrome», «inicia Spotify», «cierra Spotify», «ejecuta Word» |
 | **Archivos y carpetas** | «abre la carpeta descargas», «busca el archivo presupuesto», «abre mis documentos» |
 | **Páginas web** | «abre YouTube», «abre google.com», «busca gatos en Google» |
 | **Música** | «pon Bohemian Rhapsody» (la reproduce de verdad), «pon música», «pausa», «siguiente canción» |
 | **El tiempo** | «¿qué tiempo hace?», «el clima en Valencia», «¿va a llover?» |
 | **Cuentas** | «cuánto es 7 + 39», «el 20 por ciento de 350», «raíz de 144» |
+| **Conversiones** | «cuántos kilómetros son 5 millas», «25 grados en fahrenheit», «3 libras en kilos» |
 | **Avisos** ⏰ | «ponme un temporizador de 10 minutos», «recuérdame a las 17:30 que llame al dentista», «despiértame a las 7» |
 | **Notas y listas** | «apunta leche en la lista de la compra», «lee mi lista de la compra», «quita leche de la compra» |
 | **Volumen** | «sube el volumen», «baja el volumen 20», «volumen al 40», «silencia» |
@@ -103,6 +104,7 @@ J.A.R.V.I.S/
 │   │   ├── web.py           ← webs, búsquedas y reproducir canciones
 │   │   ├── weather.py       ← el tiempo (Open-Meteo, sin clave de API)
 │   │   ├── calc.py          ← calculadora segura
+│   │   ├── units.py         ← conversión de unidades
 │   │   ├── reminders.py     ← temporizadores, alarmas y recordatorios
 │   │   ├── notes.py         ← notas y listas
 │   │   └── base.py          ← tipos comunes a todos los comandos
@@ -110,6 +112,7 @@ J.A.R.V.I.S/
 │   └── ui/                  ← la interfaz gráfica (PyQt6)
 │       ├── main_window.py   ← la ventana principal
 │       ├── settings_dialog.py ← el panel de ajustes
+│       ├── tray.py          ← icono en la bandeja del sistema
 │       ├── theme.py         ← colores y hoja de estilos
 │       ├── workers.py       ← hilos, para que la ventana nunca se congele
 │       └── widgets/
@@ -118,7 +121,7 @@ J.A.R.V.I.S/
 │           ├── hud.py         ← rejilla de fondo y barras de estado
 │           └── waveform.py    ← la onda de audio animada
 │
-└── tests/                   ← 330 pruebas automáticas
+└── tests/                   ← 359 pruebas automáticas
 ```
 
 **La idea de la separación**: `commands/` no sabe nada de la interfaz,
@@ -336,12 +339,18 @@ entender el reconocedor: *Yarvis*, *Jarbis*, *Travis*…
 | `Esc` | callar al asistente y detener la respuesta |
 | `Ctrl+L` | limpiar la conversación |
 | `Ctrl+,` | abrir los ajustes |
-| `Ctrl+Q` | cerrar |
+| `Ctrl+Q` | cerrar del todo (no solo esconder) |
 
 También puedes mover la ventana arrastrando la barra superior, y
 maximizarla con doble clic en esa misma barra.
 
 **El botón 🔊 VOZ** activa y desactiva que el asistente conteste hablando.
+
+**Se queda en la bandeja del sistema.** Al cerrar la ventana, J.A.R.V.I.S. no
+termina: se esconde junto al reloj de Windows y sigue disponible. Un clic en
+su icono lo trae de vuelta, y con el botón derecho tienes un menú para
+escuchar una orden, activar el manos libres o abrir los ajustes. Para cerrarlo
+de verdad, usa **Salir** en ese menú o pulsa **Ctrl+Q**.
 
 **El reactor del centro cambia de color** según lo que esté pasando:
 
@@ -607,7 +616,7 @@ rejilla animada y el giro del reactor, y el consumo baja bastante.
 
 ## 7. Las pruebas
 
-El proyecto trae 330 pruebas automáticas. Si tocas el código, ejecútalas
+El proyecto trae 359 pruebas automáticas. Si tocas el código, ejecútalas
 antes de dar nada por bueno:
 
 ```bat

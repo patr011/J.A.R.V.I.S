@@ -89,7 +89,7 @@ def ventana(app, monkeypatch, tmp_path):
 
     ventana = JarvisWindow()
     yield ventana
-    ventana.close()
+    ventana.quit_completely()   # close() solo la escondería en la bandeja
 
 
 def test_la_ventana_arranca_y_se_dibuja(ventana):
@@ -121,3 +121,33 @@ def test_limpiar_el_chat_tambien_limpia_la_memoria(ventana):
     ventana.memory.add_user("algo que dije")
     ventana._clear_chat()
     assert ventana.memory.turns == []
+
+
+# --------------------------------------------------------------------------
+# Icono de la bandeja del sistema
+# --------------------------------------------------------------------------
+
+def test_el_icono_de_bandeja_se_dibuja(app):
+    """Se dibuja con código: el proyecto no depende de ningún archivo de imagen."""
+    from jarvis.ui.tray import build_icon
+
+    icono = build_icon()
+    assert not icono.isNull()
+    assert not icono.pixmap(64, 64).isNull()
+
+
+def test_el_icono_respeta_el_color_elegido(app):
+    from jarvis.ui.tray import build_icon
+
+    assert not build_icon("#FF8A00").isNull()
+
+
+def test_sin_bandeja_disponible_la_ventana_sigue_funcionando(ventana):
+    """En un escritorio sin bandeja, cerrar tiene que cerrar de verdad."""
+    if ventana.tray is None:
+        assert ventana.isEnabled()
+
+
+def test_salir_de_verdad_no_se_queda_escondido(ventana):
+    ventana.quit_completely()
+    assert ventana._salir_de_verdad
