@@ -35,16 +35,21 @@ class ModelSuggestion:
 
 
 #  RAM minima (GB) -> modelo recomendado
-MODEL_TIERS: list[tuple[int, ModelSuggestion]] = [
-    (32, ModelSuggestion(
+#
+#  Ojo con los umbrales: Windows nunca reporta la cifra redonda. Un equipo de
+#  16 GB suele declarar unos 15,7 GB porque el hardware se reserva una parte,
+#  y uno de 8 GB ronda los 7,8 GB. Por eso los limites son 30 / 15 / 7 y no
+#  32 / 16 / 8: con los redondos, cada equipo caeria en el escalon de abajo.
+MODEL_TIERS: list[tuple[float, ModelSuggestion]] = [
+    (30, ModelSuggestion(
         "llama3.1:8b", "~4.7 GB",
         "Tu equipo es potente: este modelo responde muy bien y sigue instrucciones con precision.",
         "ollama pull llama3.1:8b")),
-    (16, ModelSuggestion(
+    (15, ModelSuggestion(
         "llama3.1:8b", "~4.7 GB",
         "Con 16 GB de RAM este modelo va comodo y da respuestas de buena calidad.",
         "ollama pull llama3.1:8b")),
-    (8, ModelSuggestion(
+    (7, ModelSuggestion(
         "llama3.2:3b", "~2.0 GB",
         "Equilibrio ideal entre 8 y 16 GB de RAM: rapido y suficientemente inteligente.",
         "ollama pull llama3.2:3b")),
@@ -56,7 +61,7 @@ MODEL_TIERS: list[tuple[int, ModelSuggestion]] = [
 
 GPU_SUGGESTION = ModelSuggestion(
     "qwen2.5:7b", "~4.7 GB",
-    "Tienes GPU dedicada con bastante VRAM: puedes permitirte un modelo de 7-8B con respuestas casi instantaneas.",
+    "Tienes GPU dedicada: el modelo cabe entero en la VRAM y las respuestas salen casi al instante.",
     "ollama pull qwen2.5:7b")
 
 
@@ -103,7 +108,7 @@ def suggest_model() -> tuple[ModelSuggestion, dict[str, object]]:
     gpu = str(hw.get("gpu") or "").lower()
 
     dedicated = any(k in gpu for k in ("nvidia", "geforce", "rtx", "gtx", "radeon rx", "arc"))
-    if dedicated and ram >= 16:
+    if dedicated and ram >= 15:
         return GPU_SUGGESTION, hw
 
     for min_ram, suggestion in MODEL_TIERS:

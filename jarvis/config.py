@@ -34,9 +34,11 @@ DEFAULTS: dict[str, Any] = {
     # ---- Ollama ----
     "ollama": {
         "host": "http://localhost:11434",
-        "model": "llama3.2:3b",      # se ajusta solo en el primer arranque
+        "model": "qwen2.5:7b",       # cabe entero en los 8 GB de VRAM de una RTX 5050
         "temperature": 0.7,
-        "num_ctx": 4096,
+        # Cuanta conversacion recuerda el modelo. 8192 va sobrado con GPU
+        # dedicada; en un equipo sin GPU bajalo a 4096 para que no se ralentice.
+        "num_ctx": 8192,
         "timeout": 120,
         "keep_alive": "10m",
         "auto_pick_model": True,     # elegir modelo segun el hardware

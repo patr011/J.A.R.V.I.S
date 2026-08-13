@@ -204,7 +204,12 @@ concreto con el comando exacto para descargarlo. Esta es la tabla que usa:
 | **Menos de 8 GB de RAM** | `llama3.2:1b` | ~1,3 GB | Muy rápido, respuestas sencillas. Es lo que hay que usar en equipos justos. |
 | **8 – 16 GB de RAM** | `llama3.2:3b` | ~2,0 GB | **La opción recomendada para la mayoría.** Buen equilibrio entre velocidad y calidad. |
 | **16 GB o más** | `llama3.1:8b` | ~4,7 GB | Respuestas claramente mejores, tarda unos segundos más en CPU. |
-| **16 GB+ y GPU dedicada** (RTX/GTX/Radeon RX) | `qwen2.5:7b` | ~4,7 GB | Muy buena calidad y casi instantáneo, porque la GPU hace el trabajo. |
+| **16 GB+ y GPU dedicada** (RTX/GTX/Radeon RX) | `qwen2.5:7b` | ~4,7 GB | Muy buena calidad y casi instantáneo, porque la GPU hace el trabajo. **Es el que viene configurado por defecto.** |
+
+> Con una gráfica de **8 GB de VRAM** (RTX 5050, 4060, 3070…) un modelo de
+> 7B u 8B cabe entero en la tarjeta, que es justo lo que hace que las
+> respuestas salgan al instante. Modelos de 14B en adelante se salen de esos
+> 8 GB, se reparten con la RAM del sistema y van mucho más lentos.
 
 Descarga el que te toque abriendo el *Símbolo del sistema* y escribiendo,
 por ejemplo:
@@ -373,13 +378,45 @@ ollama list          REM ver los que tienes
 <details>
 <summary><b>El asistente tarda mucho en responder</b></summary>
 
-Estás usando un modelo demasiado grande para tu equipo. Descarga uno más
-pequeño y cámbialo:
+Primero comprueba si está usando la tarjeta gráfica o la CPU. Con el
+asistente abierto y después de hacerle una pregunta, escribe en el
+*Símbolo del sistema*:
+
+```bat
+ollama ps
+```
+
+En la columna `PROCESSOR` debe poner **`100% GPU`**. Si pone `100% CPU`, el
+modelo no está entrando en la gráfica y por eso va lento.
+
+Si de verdad estás tirando de CPU, el modelo es demasiado grande para tu
+equipo. Descarga uno más pequeño:
 
 ```bat
 ollama pull llama3.2:1b
 python main.py --modelo llama3.2:1b
 ```
+</details>
+
+<details>
+<summary><b>Tengo una RTX 50xx (5050, 5060, 5070…) y <code>ollama ps</code> dice 100% CPU</b></summary>
+
+Las RTX de la serie 50 usan la arquitectura Blackwell, que necesita una
+versión reciente de CUDA. **Las versiones antiguas de Ollama no la reconocen
+y se pasan a la CPU sin avisar**, con lo que las respuestas tardan diez veces
+más de lo que deberían.
+
+La solución es actualizar Ollama a la última versión desde
+<https://ollama.com/download> (reinstalar encima es suficiente, no pierdes
+los modelos descargados). Después:
+
+```bat
+ollama --version
+ollama ps          REM debe decir 100% GPU
+```
+
+Comprueba también que el driver de NVIDIA está al día desde GeForce
+Experience o <https://www.nvidia.com/Download/index.aspx>.
 </details>
 
 <details>
