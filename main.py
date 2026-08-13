@@ -181,6 +181,11 @@ def run_console() -> int:
     print('\n(escribe "salir" para terminar)\n')
 
     while True:
+        # Los temporizadores tambien tienen que sonar aqui, no solo en la
+        # ventana: si no, en modo consola se quedarian mudos para siempre.
+        for aviso in assistant.reminders.check_due():
+            print(f"\n  [AVISO] {assistant.reminders.announcement(aviso)}\n")
+
         try:
             text = input("> ").strip()
         except (EOFError, KeyboardInterrupt):

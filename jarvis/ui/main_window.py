@@ -536,6 +536,10 @@ class JarvisWindow(QWidget):
         self._waker.stopped.connect(self._on_waker_stopped)
         self._waker.start()
         self.wake_button.setText("👂 ESCUCHANDO")
+        # Con la escucha continua activa, el boton de dictado sobra: los dos
+        # se pelearian por el microfono y el manual tardaria en responder.
+        self.mic_button.setEnabled(False)
+        self.mic_button.setToolTip("La escucha continua ya está activa: diga «Oye JARVIS».")
 
     def _stop_wake_word(self) -> None:
         self.wake_button.setChecked(False)
@@ -550,6 +554,8 @@ class JarvisWindow(QWidget):
         waker, self._waker = self._waker, None
         if waker is not None:
             waker.deleteLater()
+        self.mic_button.setEnabled(self._mic_ready)
+        self.mic_button.setToolTip("Dictar una orden por micrófono (F2)")
         if self.reactor.state() == "listening":
             self._set_state("idle")
 
