@@ -73,6 +73,7 @@ class JarvisWindow(QWidget):
         self._drag_pos: QPoint | None = None
         self._mic_ready = False
         self._last_voice_error = ""
+        self._closing = False
 
         self._build_ui()
         self._wire_shortcuts()
@@ -306,6 +307,8 @@ class JarvisWindow(QWidget):
 
     @pyqtSlot(dict)
     def _on_startup_report(self, info: dict) -> None:
+        if self._closing:
+            return                                   # la ventana ya se va
         suggestion = info.get("suggestion") or {}
         hardware = info.get("hardware") or {}
 
@@ -618,9 +621,21 @@ class JarvisWindow(QWidget):
     def closeEvent(self, event) -> None:            # noqa: N802
         self.tts.stop()
         self.assistant.cancel_generation()
-        for worker in (self._worker, self._listener):
-            if worker is not None and worker.isRunning():
-                worker.requestInterruption()
-                worker.wait(1500)
+
+        # Hay que esperar a TODOS los hilos, incluido el de comprobación
+        # inicial: si Qt destruye la ventana con un hilo suyo todavía en
+        # marcha, el programa se cierra de golpe. Pasaba al cerrar durante
+        # los primeros segundos, mientras se consultaba Ollama.
+        self._closing = True
+        for worker in (self._worker, self._listener, getattr(self, "_check", None)):
+            if worker is None:
+                continue
+            try:
+                if worker.isRunning():
+                    worker.requestInterruption()
+                    worker.wait(6000)
+            except RuntimeError:
+                pass                                 # ya lo había borrado Qt
+
         self.tts.shutdown()
         event.accept()
