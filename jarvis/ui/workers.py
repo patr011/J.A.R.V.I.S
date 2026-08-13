@@ -8,6 +8,8 @@ del arranque.
 
 from __future__ import annotations
 
+from typing import Callable
+
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from ..core.assistant import Assistant
@@ -67,6 +69,84 @@ class ListenWorker(QThread):
             self.recognized.emit(text)
         else:
             self.failed.emit(text)
+
+
+class WakeWordWorker(QThread):
+    """Escucha continua: espera a oír «Oye JARVIS» y recoge la orden.
+
+    Dos cuidados importantes:
+
+    - No escucha mientras el asistente habla, o se oiría a sí mismo y
+      entraría en bucle.
+    - Los silencios y los ruidos que no entiende se ignoran en silencio; si
+      no, llenaría la conversación de «no he entendido nada».
+    """
+
+    heard = pyqtSignal(str)          # orden ya sin la palabra clave
+    woken = pyqtSignal()             # ha oído su nombre, espera la orden
+    status = pyqtSignal(str)
+    stopped = pyqtSignal()
+
+    def __init__(self, stt: SpeechToText, is_busy: Callable[[], bool] | None = None,
+                 parent=None) -> None:
+        super().__init__(parent)
+        self.stt = stt
+        self.is_busy = is_busy or (lambda: False)
+        self._running = True
+
+    def stop(self) -> None:
+        self._running = False
+        self.requestInterruption()
+
+    def run(self) -> None:                     # noqa: D102
+        from ..config import config
+        from ..core.speech import strip_wake_word
+
+        clave = config.get("voice.wake_word", "jarvis")
+        self.status.emit(f"Escuchando. Diga «Oye {clave.capitalize()}» seguido de la orden.")
+
+        fallos_seguidos = 0
+        while self._running and not self.isInterruptionRequested():
+            # Mientras el asistente habla, ni escuchar: se oiría a sí mismo.
+            if self.is_busy():
+                self.msleep(300)
+                continue
+
+            try:
+                ok, texto = self.stt.listen_once(timeout=4.0)
+            except Exception as exc:
+                self.status.emit(f"Micrófono no disponible: {exc}")
+                break
+
+            if not self._running:
+                break
+
+            if not ok:
+                # Silencio o ruido: normal, se sigue escuchando sin quejarse.
+                if "PyAudio" in texto or "micrófono" in texto.lower():
+                    fallos_seguidos += 1
+                    if fallos_seguidos >= 3:
+                        self.status.emit(texto)
+                        break
+                continue
+
+            fallos_seguidos = 0
+            despierta, orden = strip_wake_word(texto, clave)
+            if not despierta:
+                continue
+
+            if orden:
+                self.heard.emit(orden)
+            else:
+                # Ha dicho solo el nombre: se queda a la escucha de la orden.
+                self.woken.emit()
+                if self.is_busy():
+                    continue
+                ok, seguimiento = self.stt.listen_once(timeout=6.0)
+                if ok and seguimiento.strip():
+                    self.heard.emit(seguimiento)
+
+        self.stopped.emit()
 
 
 class StartupCheckWorker(QThread):

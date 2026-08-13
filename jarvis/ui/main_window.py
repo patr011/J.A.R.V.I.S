@@ -32,7 +32,7 @@ from .widgets.arc_reactor import ArcReactor
 from .widgets.chat_view import ChatView
 from .widgets.hud import HudBackground, StatBar
 from .widgets.waveform import Waveform
-from .workers import AssistantWorker, ListenWorker, StartupCheckWorker
+from .workers import AssistantWorker, ListenWorker, StartupCheckWorker, WakeWordWorker
 
 STATE_TEXT = {
     "idle": "EN ESPERA",
@@ -70,6 +70,7 @@ class JarvisWindow(QWidget):
 
         self._worker: AssistantWorker | None = None
         self._listener: ListenWorker | None = None
+        self._waker: WakeWordWorker | None = None
         self._drag_pos: QPoint | None = None
         self._mic_ready = False
         self._last_voice_error = ""
@@ -232,6 +233,13 @@ class JarvisWindow(QWidget):
         self.mic_button.clicked.connect(self.start_listening)
         row.addWidget(self.mic_button)
 
+        self.wake_button = QPushButton("👂 MANOS LIBRES")
+        self.wake_button.setCheckable(True)
+        self.wake_button.setToolTip(
+            "Escucha continua: diga «Oye JARVIS» seguido de la orden (F4)")
+        self.wake_button.clicked.connect(self._toggle_wake_word)
+        row.addWidget(self.wake_button)
+
         self.voice_button = QPushButton("🔊 VOZ")
         self.voice_button.setCheckable(True)
         self.voice_button.setChecked(self.tts.enabled)
@@ -251,7 +259,7 @@ class JarvisWindow(QWidget):
     def _build_footer(self) -> QHBoxLayout:
         footer = QHBoxLayout()
         self.hint_label = QLabel(
-            "F2 hablar · Esc detener · Ctrl+L limpiar · «ayuda» para ver los comandos"
+            "F2 hablar · F4 manos libres · Esc detener · Ctrl+L limpiar · «ayuda»"
         )
         self.hint_label.setObjectName("hint")
         footer.addWidget(self.hint_label)
@@ -268,6 +276,7 @@ class JarvisWindow(QWidget):
 
     def _wire_shortcuts(self) -> None:
         QShortcut(QKeySequence("F2"), self, self.start_listening)
+        QShortcut(QKeySequence("F4"), self, self.wake_button.click)
         QShortcut(QKeySequence("Ctrl+L"), self, self._clear_chat)
         QShortcut(QKeySequence("Esc"), self, self._stop_everything)
         QShortcut(QKeySequence("Ctrl+Q"), self, self.close)
@@ -420,7 +429,7 @@ class JarvisWindow(QWidget):
             )
         else:
             self.hint_label.setText(
-                "F2 hablar · Esc detener · Ctrl+L limpiar · «ayuda» para ver los comandos"
+                "F2 hablar · F4 manos libres · Esc detener · Ctrl+L limpiar · «ayuda»"
             )
 
         self.tts.say(text)
@@ -487,6 +496,67 @@ class JarvisWindow(QWidget):
     def _reset_mic_button(self) -> None:
         self.mic_button.setEnabled(self._mic_ready)
         self.mic_button.setText("🎙 HABLAR")
+
+    # -- escucha continua -------------------------------------------------
+
+    def _toggle_wake_word(self) -> None:
+        if self.wake_button.isChecked():
+            self._start_wake_word()
+        else:
+            self._stop_wake_word()
+
+    def _start_wake_word(self) -> None:
+        if not self._mic_ready:
+            self.chat.add_message(
+                "system",
+                self.stt.error or "No hay micrófono disponible para la escucha continua.\n"
+                "   Alternativa: pulse Windows+H y dicte directamente en la caja de texto.")
+            self.wake_button.setChecked(False)
+            return
+        if self._waker is not None and self._waker.isRunning():
+            return
+
+        # No escucha mientras habla ni mientras piensa: se oiría a sí mismo.
+        self._waker = WakeWordWorker(
+            self.stt,
+            is_busy=lambda: self.tts.is_busy or (self._worker is not None
+                                                 and self._worker.isRunning()),
+            parent=self)
+        self._waker.heard.connect(self._on_wake_command)
+        self._waker.woken.connect(self._on_woken)
+        self._waker.status.connect(lambda m: self.chat.add_message("system", m))
+        self._waker.stopped.connect(self._on_waker_stopped)
+        self._waker.start()
+        self.wake_button.setText("👂 ESCUCHANDO")
+
+    def _stop_wake_word(self) -> None:
+        self.wake_button.setChecked(False)
+        self.wake_button.setText("👂 MANOS LIBRES")
+        if self._waker is not None and self._waker.isRunning():
+            self._waker.stop()
+
+    @pyqtSlot()
+    def _on_waker_stopped(self) -> None:
+        self.wake_button.setChecked(False)
+        self.wake_button.setText("👂 MANOS LIBRES")
+        waker, self._waker = self._waker, None
+        if waker is not None:
+            waker.deleteLater()
+        if self.reactor.state() == "listening":
+            self._set_state("idle")
+
+    @pyqtSlot()
+    def _on_woken(self) -> None:
+        """Ha oído su nombre pero sin orden: se queda esperando."""
+        self._set_state("listening")
+        self.hint_label.setText("Le escucho… diga la orden.")
+
+    @pyqtSlot(str)
+    def _on_wake_command(self, text: str) -> None:
+        if not text.strip():
+            return
+        self.input.setText(text)
+        self.send_message()
 
     def _toggle_voice(self) -> None:
         enabled = self.tts.set_enabled(self.voice_button.isChecked())
@@ -655,13 +725,16 @@ class JarvisWindow(QWidget):
     def closeEvent(self, event) -> None:            # noqa: N802
         self.tts.stop()
         self.assistant.cancel_generation()
+        if self._waker is not None:
+            self._waker.stop()
 
         # Hay que esperar a TODOS los hilos, incluido el de comprobación
         # inicial: si Qt destruye la ventana con un hilo suyo todavía en
         # marcha, el programa se cierra de golpe. Pasaba al cerrar durante
         # los primeros segundos, mientras se consultaba Ollama.
         self._closing = True
-        for worker in (self._worker, self._listener, getattr(self, "_check", None)):
+        for worker in (self._worker, self._listener, self._waker,
+                       getattr(self, "_check", None)):
             if worker is None:
                 continue
             try:

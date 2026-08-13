@@ -246,6 +246,75 @@ class TextToSpeech:
 
 
 # --------------------------------------------------------------------------
+# Palabra clave ("Oye JARVIS")
+# --------------------------------------------------------------------------
+
+# El reconocedor rara vez escribe "jarvis" tal cual: suele entender algo
+# parecido. Aceptar variantes evita tener que vocalizar como un locutor.
+WAKE_VARIANTS = (
+    "jarvis", "yarvis", "harvis", "jarbis", "yarbis", "jervis", "yervis",
+    "charvis", "sharvis", "jarvi", "yarvi", "arvis", "travis", "jarvis.",
+)
+
+# Muletillas que pueden ir delante: "oye jarvis", "hey jarvis", "ok jarvis".
+WAKE_PREFIXES = ("oye", "hey", "ey", "eh", "ok", "okey", "okay", "vale", "escucha")
+
+
+def strip_wake_word(text: str, wake_word: str = "jarvis") -> tuple[bool, str]:
+    """¿Empieza la frase por la palabra clave? Devuelve (sí/no, la orden).
+
+    «Oye Jarvis, pon música»  ->  (True, "pon música")
+    «Jarvis»                  ->  (True, "")          solo la llamada
+    «pon música»              ->  (False, "pon música")
+    """
+    import unicodedata
+
+    original = (text or "").strip()
+    if not original:
+        return False, ""
+
+    # Normaliza para comparar, pero conserva el texto original para devolverlo.
+    plano = unicodedata.normalize("NFD", original.lower())
+    plano = "".join(c for c in plano if unicodedata.category(c) != "Mn")
+
+    variantes = set(WAKE_VARIANTS)
+    clave = (wake_word or "jarvis").strip().lower()
+    if clave:
+        variantes.add(clave)
+
+    palabras = re.findall(r"[\w']+", plano)
+    if not palabras:
+        return False, ""
+
+    indice = 0
+    if palabras[0] in WAKE_PREFIXES and len(palabras) > 1:
+        indice = 1
+
+    if palabras[indice] not in variantes:
+        return False, original
+
+    # La orden es todo lo que va después de la palabra clave.
+    restantes = palabras[indice + 1:]
+    if not restantes:
+        return True, ""
+
+    # Recorta el texto original por el mismo punto, para no perder tildes.
+    tokens_originales = re.findall(r"[\w']+|[^\w\s]", original)
+    consumidas = 0
+    corte = 0
+    for posicion, token in enumerate(tokens_originales):
+        if re.match(r"[\w']+", token):
+            consumidas += 1
+            if consumidas == indice + 1:
+                corte = posicion + 1
+                break
+    orden = " ".join(tokens_originales[corte:])
+    orden = re.sub(r"\s+([,.;:!?»)])", r"\1", orden)     # sin espacio antes del cierre
+    orden = re.sub(r"([¿¡(«])\s+", r"\1", orden)         # ni después de la apertura
+    return True, orden.strip(" ,.")
+
+
+# --------------------------------------------------------------------------
 # Voz a texto
 # --------------------------------------------------------------------------
 
