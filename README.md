@@ -106,7 +106,14 @@ comandos nuevos sin tocar la interfaz.
 
 ### Paso 1 — Instalar Python
 
-1. Ve a <https://www.python.org/downloads/> y descarga **Python 3.10 o superior**.
+1. Ve a <https://www.python.org/downloads/> y descarga **Python 3.12**.
+
+   > **Por qué la 3.12 y no la última**: las librerías de audio tardan meses
+   > en publicar versión precompilada para cada Python nuevo. Con la 3.12
+   > todo se instala de un tirón; con la 3.13 o la 3.14 es muy probable que
+   > PyAudio falle y te quedes sin micrófono. Sirve cualquiera desde la 3.10,
+   > pero la 3.12 es la que da menos guerra.
+
 2. Ejecuta el instalador y, **muy importante**, marca la casilla
    **«Add Python to PATH»** abajo del todo antes de pulsar *Install Now*.
 3. Para comprobar que ha funcionado, abre el menú Inicio, escribe `cmd`, abre
@@ -422,16 +429,33 @@ Experience o <https://www.nvidia.com/Download/index.aspx>.
 <details>
 <summary><b><code>pip install pyaudio</code> falla</b></summary>
 
-Es el problema más habitual en Windows. Prueba en este orden:
+Es el problema más habitual en Windows, y **casi siempre es por la versión de
+Python**. PyAudio se distribuye ya compilado, pero tarda en publicar paquete
+para cada Python nuevo. Si usas la última versión recién salida (3.13, 3.14…),
+no encuentra paquete, intenta compilarlo desde cero, necesita Visual Studio y
+falla.
+
+Comprueba qué versión tienes:
 
 ```bat
-pip install pipwin
-pipwin install pyaudio
+python --version
 ```
 
-Si tampoco funciona, descarga el archivo `.whl` que corresponda a tu versión
-de Python desde <https://www.lfd.uci.edu/~gohlke/pythonlibs/#pyaudio> e
-instálalo con `pip install ruta\del\archivo.whl`.
+**Si es 3.13 o superior**, instala además **Python 3.12** desde
+<https://www.python.org/downloads/release/python-3129/> (puedes tener las dos
+a la vez, no se estorban) y vuelve a ejecutar `instalar.bat`: detecta la 3.12
+y la usa automáticamente para el proyecto.
+
+**Si es 3.12 o inferior** y aun así falla, prueba a actualizar pip:
+
+```bat
+python -m pip install --upgrade pip
+pip install pyaudio
+```
+
+> ⚠️ **No uses `pipwin`.** Verás ese consejo en muchos foros antiguos, pero
+> descargaba los paquetes de un sitio web que cerró en 2022, así que ya no
+> funciona. Hoy PyAudio se instala directamente con `pip`.
 
 **No es imprescindible**: sin PyAudio el asistente funciona perfectamente por
 texto, solo se desactiva el botón del micrófono.
