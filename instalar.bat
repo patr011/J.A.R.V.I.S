@@ -51,6 +51,24 @@ if errorlevel 1 (
 )
 
 REM ---------- 2. Crear el entorno virtual ----------
+REM Si ya existe un .venv creado con OTRA version de Python (por ejemplo,
+REM porque instalaste la 3.12 despues de un primer intento fallido), hay que
+REM rehacerlo: reutilizarlo dejaria el proyecto en la version antigua y los
+REM mismos errores de instalacion de antes.
+set "VENVVER="
+set "WANTVER="
+for /f %%a in ('%PYCMD% -c "import sys;print(sys.version_info.major*100+sys.version_info.minor)"') do set "WANTVER=%%a"
+if exist ".venv\Scripts\python.exe" (
+    for /f %%a in ('.venv\Scripts\python.exe -c "import sys;print(sys.version_info.major*100+sys.version_info.minor)"') do set "VENVVER=%%a"
+)
+
+if defined VENVVER if not "%VENVVER%"=="%WANTVER%" (
+    echo.
+    echo  El entorno .venv existente usa otra version de Python.
+    echo  Se rehace para usar la correcta ...
+    rmdir /s /q ".venv"
+)
+
 if not exist ".venv" (
     echo.
     echo  Creando el entorno virtual .venv ...
