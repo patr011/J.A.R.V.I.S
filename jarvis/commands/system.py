@@ -15,7 +15,10 @@ from datetime import datetime
 from pathlib import Path
 
 from ..config import config
+from ..logging_setup import get_logger
 from .base import CommandResult
+
+log = get_logger("sistema")
 
 IS_WINDOWS = sys.platform == "win32"
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -69,6 +72,7 @@ class VolumeController:
         except Exception as exc:
             self._endpoint = None
             self.error = f"{type(exc).__name__}: {exc}"
+            log.warning("pycaw no ha podido conectar con el mezclador", exc_info=True)
 
     def retry(self) -> bool:
         """Vuelve a intentar la conexión (útil si cambias de altavoces)."""

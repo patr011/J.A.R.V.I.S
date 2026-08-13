@@ -21,8 +21,11 @@ from ..commands.base import CommandResult
 from ..commands.registry import CommandRouter, is_affirmative, is_negative
 from ..commands.reminders import ReminderManager
 from ..config import config
+from ..logging_setup import get_logger
 from .memory import Memory
 from .ollama_client import OllamaClient, OllamaError, build_system_prompt
+
+log = get_logger("asistente")
 
 
 @dataclass
@@ -83,6 +86,8 @@ class Assistant:
                 return pending
 
             result = self.router.handle(text)
+            log.info("Orden: %r -> %s", text,
+                     "comando" if result.handled else "modelo de lenguaje")
             if result.handled:
                 response = self._from_command(result)
                 self.memory.add_assistant(response.text)
@@ -145,6 +150,7 @@ class Assistant:
         try:
             answer = self.llm.chat_stream(messages, on_token=on_token)
         except OllamaError as exc:
+            log.warning("Ollama no ha respondido: %s", exc)
             # Los errores de conexion no se guardan en la memoria: solo
             # ensuciarian el contexto que se le manda al modelo despues.
             return Response(str(exc), source="llm", ok=False)

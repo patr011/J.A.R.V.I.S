@@ -18,7 +18,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from jarvis import __version__                                    # noqa: E402
-from jarvis.config import CONFIG_FILE, config                     # noqa: E402
+from jarvis.config import CONFIG_FILE, LOG_FILE, config           # noqa: E402
+from jarvis.logging_setup import (get_logger, install_exception_hook,  # noqa: E402
+                                  setup_logging)
 
 BANNER = r"""
    ██  ▄▄▄       ██▀███   ██▒   █▓ ██▓  ██████
@@ -85,6 +87,7 @@ def run_diagnostics() -> int:
     print(BANNER)
     print(f"Versión {__version__}\n")
     print("Configuración:", CONFIG_FILE)
+    print("Registro de errores:", LOG_FILE)
 
     print("\n--- LIBRERÍAS ---")
     ok = check_dependencies(verbose=True)
@@ -208,11 +211,21 @@ def run_gui() -> int:
     from PyQt6.QtWidgets import QApplication
     from jarvis.ui.main_window import JarvisWindow
 
+    log = get_logger("arranque")
+    log.info("Abriendo la interfaz grafica")
     app = QApplication(sys.argv)
     app.setApplicationName("J.A.R.V.I.S.")
     app.setApplicationVersion(__version__)
 
     window = JarvisWindow()
+
+    # Un fallo inesperado ya queda en el log; ademas se enseña en la ventana,
+    # para que el usuario no vea solo que "se ha cerrado solo".
+    def avisar(mensaje: str) -> None:
+        window.chat.add_message(
+            "error", f"Error interno: {mensaje}\n   Detalle completo en {LOG_FILE}")
+    install_exception_hook(on_error=avisar)
+
     if config.get("ui.start_maximized", False):
         window.showMaximized()
     else:
@@ -237,6 +250,9 @@ def main() -> int:
                         help="usar este modelo de Ollama en esta ejecución")
     parser.add_argument("--version", action="version", version=f"J.A.R.V.I.S. {__version__}")
     args = parser.parse_args()
+
+    setup_logging(verbose=args.consola or args.check)
+    install_exception_hook()
 
     if args.modelo:
         config.set("ollama.model", args.modelo)

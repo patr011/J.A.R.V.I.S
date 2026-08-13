@@ -20,6 +20,9 @@ from typing import Callable, Iterator
 import requests
 
 from ..config import config
+from ..logging_setup import get_logger
+
+log = get_logger("ollama")
 
 # --------------------------------------------------------------------------
 # Recomendacion de modelo segun el hardware

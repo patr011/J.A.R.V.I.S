@@ -16,6 +16,9 @@ import threading
 from typing import Callable
 
 from ..config import config
+from ..logging_setup import get_logger
+
+log = get_logger("voz")
 
 # --------------------------------------------------------------------------
 # Deteccion de dependencias opcionales
@@ -154,6 +157,7 @@ class TextToSpeech:
             return True
         except Exception as exc:                     # pragma: no cover
             self.error = f"No se pudo iniciar la voz: {exc}"
+            log.error("No se pudo iniciar el motor de voz", exc_info=True)
             self.available = False
             self.enabled = False
             return False
@@ -232,7 +236,7 @@ class TextToSpeech:
                 # error se guarda para que la ventana pueda mostrarlo.
                 self.error = f"Error al hablar: {type(exc).__name__}: {exc}"
                 self._failures += 1
-                print(f"[voz] {self.error}")
+                log.error(self.error, exc_info=True)
                 if self._failures >= 3:
                     self.error = (f"La voz ha fallado {self._failures} veces y se desactiva. "
                                   f"Último error: {exc}")
