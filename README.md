@@ -442,9 +442,10 @@ python --version
 ```
 
 **Si es 3.13 o superior**, instala además **Python 3.12** desde
-<https://www.python.org/downloads/release/python-3129/> (puedes tener las dos
-a la vez, no se estorban) y vuelve a ejecutar `instalar.bat`: detecta la 3.12
-y la usa automáticamente para el proyecto.
+<https://www.python.org/downloads/windows/> (baja hasta *Stable Releases* y
+coge cualquier `Python 3.12.x` → *Windows installer (64-bit)*). Puedes tener
+las dos versiones a la vez, no se estorban. Luego vuelve a ejecutar
+`instalar.bat`: detecta la 3.12 y la usa automáticamente para el proyecto.
 
 **Si es 3.12 o inferior** y aun así falla, prueba a actualizar pip:
 
