@@ -210,6 +210,85 @@ class AppLauncher:
             f"No encuentro ninguna aplicación llamada «{spoken_name.strip()}».{extra}"
         )
 
+    # ------------------------------------------------------------------
+    # Cerrar
+    # ------------------------------------------------------------------
+
+    def close_app(self, spoken_name: str) -> CommandResult:
+        """Cierra una aplicacion abierta, con educacion.
+
+        Se pide al programa que se cierre solo (como pulsando la X), en vez
+        de matarlo: asi puede preguntar si quieres guardar. Si no hay ninguna
+        ventana que cerrar, se recurre a terminar el proceso.
+        """
+        raw = strip_filler(spoken_name)
+        if not raw:
+            return CommandResult.fail("¿Qué aplicación quiere que cierre?")
+
+        # Ojo con los alias: «chrome» apunta a «Google Chrome», que es el
+        # nombre del acceso directo y sirve para ABRIR. Pero el proceso en
+        # marcha se llama «chrome.exe». Por eso se prueba con lo que dijo el
+        # usuario, con el alias y con cada palabra suelta del alias.
+        aliases = {normalize(k): v for k, v in (config.get("app_aliases") or {}).items()}
+        alias = normalize(aliases.get(raw, raw))
+        candidatos = {raw, alias}
+        candidatos.update(p for p in alias.split() if len(p) > 3)
+        candidatos.discard("")
+
+        procesos = self._matching_processes(candidatos)
+        if not procesos:
+            return CommandResult.fail(
+                f"No veo «{spoken_name.strip()}» abierto ahora mismo.")
+
+        nombre = procesos[0][1]
+        cerrados = 0
+        for proceso, _ in procesos:
+            try:
+                proceso.terminate()               # equivale a pulsar la X
+                cerrados += 1
+            except Exception:
+                continue
+
+        if not cerrados:
+            return CommandResult.fail(
+                f"No he podido cerrar {nombre}. Puede que necesite permisos de administrador.")
+
+        # Se da un margen para que guarde y cierre por su cuenta.
+        try:
+            import psutil
+            psutil.wait_procs([p for p, _ in procesos], timeout=3)
+        except Exception:
+            pass
+
+        return CommandResult.done(f"Cerrando {nombre}.", app=nombre, procesos=cerrados)
+
+    @staticmethod
+    def _matching_processes(objetivos: set[str]) -> list[tuple[object, str]]:
+        """Procesos abiertos cuyo nombre encaja con alguno de los objetivos."""
+        try:
+            import psutil
+        except ImportError:
+            return []
+
+        encontrados: list[tuple[object, str]] = []
+        for proceso in psutil.process_iter(["name", "pid"]):
+            try:
+                bruto = proceso.info.get("name") or ""
+                if not bruto:
+                    continue
+                limpio = normalize(bruto).removesuffix(".exe")
+                if any(limpio == o or limpio.startswith(o) or o in limpio
+                       for o in objetivos):
+                    encontrados.append((proceso, bruto))
+            except Exception:
+                continue
+
+        # Nunca cerrarse a si mismo ni tumbar el explorador de Windows.
+        prohibidos = {"python", "pythonw", "explorer", "svchost", "csrss",
+                      "winlogon", "services", "lsass", "system"}
+        return [(p, n) for p, n in encontrados
+                if normalize(n).removesuffix(".exe") not in prohibidos]
+
     def suggest(self, query: str, limit: int = 3) -> str:
         """Nombres parecidos, para ayudar cuando no se encuentra la app."""
         index = self.build_index()
@@ -229,3 +308,7 @@ launcher = AppLauncher()
 
 def open_app(name: str) -> CommandResult:
     return launcher.open_app(name)
+
+
+def close_app(name: str) -> CommandResult:
+    return launcher.close_app(name)

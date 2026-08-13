@@ -15,8 +15,8 @@ import re
 from typing import Callable
 
 from ..config import config
-from . import calc, files, notes, reminders, system, weather, web
-from .apps import launcher
+from . import calc, files, notes, reminders, system, units, weather, web
+from .apps import launcher, close_app
 from .base import CommandResult, normalize, strip_filler
 
 # --------------------------------------------------------------------------
@@ -342,6 +342,12 @@ class CommandRouter:
                 ciudad = m.group(1).strip(" .?¿!")
             return weather.get_weather(ciudad)
 
+        # --- Conversiones de unidades ---
+        if units.looks_like_conversion(norm):
+            convertido = units.convert(raw)
+            if convertido is not None:
+                return convertido
+
         # --- Cuentas: las resuelve el programa, no el modelo ---
         if re.match(r"^(cuanto es|cuanto son|calcula|calcular|cuanto vale)\b", norm) or \
                 calc.looks_like_math(norm):
@@ -434,6 +440,14 @@ class CommandRouter:
     # ------------------------------------------------------------------
 
     def _apps(self, raw: str, norm: str) -> CommandResult | None:
+        # Cerrar va antes que abrir: comparten estructura de frase.
+        m = re.match(r"^(cierra|cerrar|cierre|quita|mata|termina|sal de)\s+(.+)$", norm)
+        if m:
+            objetivo = m.group(2).strip()
+            # «cierra la sesion» y «cierra la ventana» no son aplicaciones.
+            if not re.search(r"\b(sesion|ventana|pestaña|programa que|todo)\b", objetivo):
+                return close_app(objetivo)
+
         m = re.match(
             r"^(abre|abrir|abreme|inicia|iniciar|lanza|lanzar|ejecuta|ejecutar|arranca|pon en marcha)"
             r"\s+(.+)$", norm)
@@ -465,6 +479,7 @@ def help_text() -> str:
         "Esto es lo que puedo hacer:\n"
         "\n  APLICACIONES\n"
         "   · «abre Chrome», «inicia Spotify», «abre la calculadora»\n"
+        "   · «cierra Chrome», «cierra Spotify»\n"
         "\n  ARCHIVOS Y CARPETAS\n"
         "   · «abre la carpeta descargas», «busca el archivo presupuesto»\n"
         "\n  WEB\n"
@@ -481,6 +496,7 @@ def help_text() -> str:
         "\n  INFORMACIÓN\n"
         "   · «¿qué tiempo hace?», «el clima en Valencia», «¿va a llover?»\n"
         "   · «cuánto es 7 + 39», «el 20 por ciento de 350», «raíz de 144»\n"
+        "   · «cuántos kilómetros son 5 millas», «25 grados en fahrenheit»\n"
         "   · «qué hora es», «qué día es hoy»\n"
         "\n  NOTAS Y LISTAS\n"
         "   · «apunta leche en la lista de la compra»\n"
