@@ -97,6 +97,8 @@ J.A.R.V.I.S/
 ├── .env.example             ← plantilla para tu clave (el .env real no se sube)
 ├── instalar.bat             ← instalación automática (doble clic)
 ├── ejecutar.bat             ← arranca el asistente (doble clic)
+├── poner_clave.bat          ← guarda la clave de la API sin enseñarla
+├── poner_clave.py           ← lo que hace el trabajo del anterior
 │
 ├── jarvis/
 │   ├── config.py            ← configuración (colores, modelo, alias, atajos)
@@ -137,7 +139,7 @@ J.A.R.V.I.S/
 │           ├── hud.py         ← rejilla de fondo y barras de estado
 │           └── waveform.py    ← la onda de audio animada
 │
-└── tests/                   ← 414 pruebas automáticas
+└── tests/                   ← 432 pruebas automáticas
 ```
 
 **La idea de la separación**: `commands/` no sabe nada de la interfaz, `ui/`
@@ -231,29 +233,41 @@ la tienes, añade algo de crédito y pulsa **Create Key**. Cópiala: empieza por
 > alguna vez se te escapa (la pegas en un chat, la subes por error), entra en
 > esa misma página y bórrala: deja de funcionar al instante.
 
-**2. Guárdala en un archivo `.env`**
+**2. Guárdala con `poner_clave.bat`**
 
-Abre el Bloc de notas, escribe **una sola línea** con tu clave:
+Haz doble clic en **`poner_clave.bat`** (está en la carpeta del proyecto).
+Te pedirá la clave; pégala y pulsa Enter.
+
+**Al pegarla no verás nada en pantalla, ni siquiera asteriscos. Es a
+propósito**: así la clave no queda a la vista de quien pase por detrás ni se
+guarda en el historial de la consola. El archivo se crea solo, en el sitio
+correcto, y te avisa si la clave está mal copiada (por ejemplo, si se te ha
+quedado el `sk-ant-` pegado dos veces).
+
+> **No la escribas en la consola a mano.** Todo lo que tecleas en PowerShell
+> queda guardado en un archivo de historial, y una captura de pantalla de esa
+> ventana enseña la clave entera. Si ya lo has hecho, borra la clave en la
+> consola de Anthropic, crea otra, y limpia el historial con:
+> `Remove-Item (Get-PSReadlineOption).HistorySavePath`
+
+<details>
+<summary>Hacerlo a mano (si prefieres no usar el .bat)</summary>
+
+El archivo es `C:\Users\TU_USUARIO\.jarvis\.env` y lleva **una sola línea**:
 
 ```
 ANTHROPIC_API_KEY=sk-ant-api03-loquesea...
 ```
 
-y guárdalo como:
-
-```
-C:\Users\TU_USUARIO\.jarvis\.env
-```
-
-> **Ojo al guardar con el Bloc de notas**: en el diálogo, cambia *Tipo* a
-> «Todos los archivos», o te creará `.env.txt` y no lo encontrará. Si la
-> carpeta `.jarvis` no existe todavía, arranca el asistente una vez y se crea
-> sola.
+Si lo creas con el Bloc de notas, en el diálogo de guardar cambia *Tipo* a
+«Todos los archivos», o te creará `.env.txt` y no lo encontrará.
 
 También vale poner el `.env` en la carpeta del proyecto (tienes la plantilla
 en `.env.example`), o definir la variable de entorno `ANTHROPIC_API_KEY` de
-Windows si prefieres. El orden de búsqueda es: variable de entorno → `.env`
-del proyecto → `.env` de `~/.jarvis`.
+Windows. El orden de búsqueda es: variable de entorno → `.env` del proyecto →
+`.env` de `~/.jarvis`.
+
+</details>
 
 **3. Comprueba que la detecta**
 
@@ -716,7 +730,7 @@ rejilla animada y el giro del reactor, y el consumo baja bastante.
 
 ## 7. Las pruebas
 
-El proyecto trae 414 pruebas automáticas. Si tocas el código, ejecútalas
+El proyecto trae 432 pruebas automáticas. Si tocas el código, ejecútalas
 antes de dar nada por bueno:
 
 ```bat

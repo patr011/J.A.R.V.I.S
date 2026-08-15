@@ -121,8 +121,10 @@ echo    Instalacion terminada.
 echo.
 echo    Siguiente paso: pon tu clave de la API de Claude.
 echo      1. Sacala en https://console.anthropic.com/settings/keys
-echo      2. Crea el archivo  %%USERPROFILE%%\.jarvis\.env
-echo      3. Escribe dentro:  ANTHROPIC_API_KEY=sk-ant-...
+echo      2. Haz doble clic en  poner_clave.bat  y pegala cuando la pida.
+echo.
+echo    (Ese archivo la guarda solo, sin que se vea en pantalla ni quede
+echo     en el historial. No hace falta crear ningun archivo a mano.)
 echo.
 echo    (Si prefieres no pagar, puedes seguir usando Ollama en local:
 echo     cambia el cerebro en los ajustes del propio asistente.)
