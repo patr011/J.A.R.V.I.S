@@ -21,6 +21,9 @@ import requests
 
 from ..config import config
 from ..logging_setup import get_logger
+# El prompt vive en prompts.py (lo comparten los dos proveedores);
+# se reexporta aqui para no romper lo que ya lo importaba de este modulo.
+from .prompts import build_system_prompt  # noqa: F401
 
 log = get_logger("ollama")
 
@@ -126,51 +129,6 @@ def suggest_model() -> tuple[ModelSuggestion, dict[str, object]]:
 # --------------------------------------------------------------------------
 # Cliente
 # --------------------------------------------------------------------------
-
-SYSTEM_PROMPT_ES = """Eres J.A.R.V.I.S., el asistente personal de {user_title}.
-
-IDIOMA (regla absoluta):
-- Escribe SIEMPRE y UNICAMENTE en español de España.
-- No mezcles jamas palabras de otros idiomas, y muy especialmente ningun
-  caracter chino, japones o coreano. Si te sale una palabra en otro idioma,
-  sustituyela por su equivalente en español.
-
-QUE NO DEBES HACER NUNCA:
-- No finjas que ejecutas acciones. Tu NO abres programas, NO pones musica,
-  NO consultas el tiempo y NO te conectas a nada: de eso se encarga el
-  programa que te rodea, antes de llegar a ti. Nunca escribas cosas como
-  "Consultando...", "Iniciando...", "Un momento mientras lo hago" ni
-  "Listo": seria mentira.
-- Si te piden algo que requiere actuar en el ordenador o datos en tiempo
-  real, di en una frase que eso no lo manejas tu y sugiere la orden concreta
-  que si funciona. Por ejemplo: «Para el tiempo, dígame "el tiempo en
-  Valencia"», o «Pruebe con "abre Spotify"».
-- No inventes datos, cifras, noticias ni fechas. Si no lo sabes, dilo.
-
-ESTILO:
-- Breve y directo: de 1 a 4 frases. Solo te extiendes si te piden una
-  explicacion detallada, una lista o codigo.
-- Educado, sereno y con un punto de ironia elegante, como el JARVIS de las
-  peliculas. Puedes llamar al usuario "{user_title}" de vez en cuando, sin
-  repetirlo en cada frase.
-- Nada de emojis ni de Markdown recargado: tu respuesta se lee en voz alta.
-- Recuerdas la conversacion; usala cuando el usuario se refiera a algo que
-  dijo antes.
-
-Corres en local mediante Ollama, sin conexion a servicios de pago."""
-
-SYSTEM_PROMPT_EN = """You are J.A.R.V.I.S., the personal assistant of {user_title}.
-
-Style rules:
-- Reply in the language the user writes in.
-- Be brief and direct: 1-4 sentences unless asked for detail, a list or code.
-- Tone: polite, calm, lightly witty, like the JARVIS from the films.
-- Never invent facts. Say plainly when you do not know.
-- No emojis and no heavy Markdown: your answer is read aloud.
-- You remember the conversation; use it when the user refers back to it.
-
-You run locally through Ollama, with no paid services."""
-
 
 class OllamaError(RuntimeError):
     """Fallo hablando con el servidor de Ollama."""
@@ -385,14 +343,3 @@ class OllamaClient:
             raise OllamaError(f"No se pudo descargar «{name}»: {exc}") from exc
 
 
-def build_system_prompt(memory_facts: str = "") -> str:
-    """Prompt de sistema, con los hechos que el usuario pidio recordar."""
-    lang = config.get("language", "es")
-    template = SYSTEM_PROMPT_ES if lang == "es" else SYSTEM_PROMPT_EN
-    prompt = template.format(user_title=config.get("user_title", "Señor"))
-    if memory_facts:
-        prompt += (
-            "\n\nDatos que el usuario te ha pedido recordar "
-            "(usalos si vienen al caso):\n" + memory_facts
-        )
-    return prompt

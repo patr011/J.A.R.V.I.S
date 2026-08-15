@@ -25,13 +25,13 @@ from ..commands import system as syscmd
 from ..config import config
 from ..core.assistant import Assistant
 from ..core.memory import Memory
-from ..core.ollama_client import OllamaClient
+from ..core.llm import create_client
 from ..core.speech import SpeechToText, TextToSpeech
 from .theme import theme
 from .tray import TrayIcon, build_icon
 from .widgets.arc_reactor import ArcReactor
 from .widgets.chat_view import ChatView
-from .widgets.hud import HudBackground, StatBar
+from .widgets.hud import HudBackground, StatBar, WrapLabel
 from .widgets.waveform import Waveform
 from .workers import AssistantWorker, ListenWorker, StartupCheckWorker, WakeWordWorker
 
@@ -49,8 +49,8 @@ def _panel(title: str) -> tuple[QFrame, QVBoxLayout]:
     frame = QFrame()
     frame.setObjectName("panel")
     layout = QVBoxLayout(frame)
-    layout.setContentsMargins(14, 10, 14, 12)
-    layout.setSpacing(8)
+    layout.setContentsMargins(14, 8, 14, 10)
+    layout.setSpacing(6)
     if title:
         label = QLabel(title)
         label.setObjectName("panelTitle")
@@ -64,7 +64,7 @@ class JarvisWindow(QWidget):
 
         # --- nucleo ---
         self.memory = Memory()
-        self.llm = OllamaClient()
+        self.llm = create_client()
         self.assistant = Assistant(memory=self.memory, llm=self.llm)
         self.tts = TextToSpeech()
         self.stt = SpeechToText()
@@ -94,7 +94,9 @@ class JarvisWindow(QWidget):
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
         self.resize(1180, 740)
-        self.setMinimumSize(900, 600)
+        # El minimo de alto no es un capricho: por debajo de esto la columna
+        # de la izquierda no cabe y Qt empieza a recortar texto.
+        self.setMinimumSize(900, 700)
         self.setObjectName("root")
         self.setStyleSheet(theme.stylesheet())
 
@@ -169,6 +171,7 @@ class JarvisWindow(QWidget):
 
     def _build_left_column(self) -> QWidget:
         column = QWidget()
+        column.setObjectName("sidePanelBody")
         column.setFixedWidth(320)
         layout = QVBoxLayout(column)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -201,22 +204,20 @@ class JarvisWindow(QWidget):
 
         # Nucleo de IA
         ai_frame, ai_layout = _panel("NÚCLEO IA")
-        self.model_label = QLabel("Ollama: comprobando...")
-        self.model_label.setObjectName("hint")
-        self.model_label.setWordWrap(True)
-        self.memory_label = QLabel("Memoria: 0 turnos")
-        self.memory_label.setObjectName("hint")
-        self.voice_label = QLabel("Voz: —")
-        self.voice_label.setObjectName("hint")
-        self.reminder_label = QLabel("Sin avisos programados")
-        self.reminder_label.setObjectName("hint")
+        self.model_label = WrapLabel("Núcleo: comprobando…")
+        self.memory_label = WrapLabel("Memoria: 0 turnos")
+        self.voice_label = WrapLabel("Voz: —")
+        self.reminder_label = WrapLabel("Sin avisos programados")
+        self.cost_label = WrapLabel("")
+        self.cost_label.setVisible(False)
         for label in (self.model_label, self.memory_label, self.voice_label,
-                      self.reminder_label):
-            label.setWordWrap(True)
+                      self.reminder_label, self.cost_label):
+            label.setObjectName("hint")
             ai_layout.addWidget(label)
         layout.addWidget(ai_frame)
 
         layout.addStretch(1)
+        self.side_panel = column
         return column
 
     # -- columna derecha --------------------------------------------------
@@ -361,6 +362,12 @@ class JarvisWindow(QWidget):
         suggestion = info.get("suggestion") or {}
         hardware = info.get("hardware") or {}
 
+        # --- Claude: los fallos son otros (clave, crédito, conexión) ---
+        if info.get("provider") == "claude":
+            self._report_claude(info)
+            self._report_microphone(info)
+            return
+
         # --- Ollama ---
         if not info.get("ollama_running"):
             self.model_label.setText("Ollama: sin conexión")
@@ -401,7 +408,42 @@ class JarvisWindow(QWidget):
             config.set("ollama.suggestion_shown", True)
             config.save()
 
-        # --- Microfono ---
+        self._report_microphone(info)
+
+    def _report_claude(self, info: dict) -> None:
+        """Estado del núcleo cuando el cerebro es la API de Claude."""
+        from ..core.claude_client import model_info
+        from ..core.secrets import mask_api_key
+
+        descripcion = str(info.get("descripcion") or "Claude")
+
+        if info.get("model_ready"):
+            datos = model_info(str(info.get("model") or ""))
+            self.model_label.setText(
+                f"Claude: conectado\nModelo: {datos.nombre}\nClave: {mask_api_key()}")
+            self.chat.add_message(
+                "system",
+                f"Núcleo de IA conectado a la API de Claude.\n"
+                f"   Modelo: {datos.nombre} — {datos.nota}\n"
+                f"   Precio: ${datos.entrada:.2f} por millón de tokens de entrada, "
+                f"${datos.salida:.2f} de salida.")
+            return
+
+        # Algo falla: el cliente ya trae el motivo y qué hacer al respecto.
+        self.model_label.setText("Claude: sin conexión")
+        motivo = str(info.get("error") or "").strip()
+        self.chat.add_message(
+            "error",
+            (motivo or f"No he podido conectar con {descripcion}.")
+            + "\n\nMientras tanto, todos los comandos del sistema funcionan con "
+              "normalidad. Si prefiere no depender de internet, puede cambiar a "
+              "un modelo local en los ajustes (Ctrl+,).")
+
+    def _report_microphone(self, info: dict) -> None:
+        # Un re-chequeo lanzado al cambiar de proveedor no mira el micrófono;
+        # sin esta guarda daría por perdido uno que sí funciona.
+        if not info.get("mic_checked", True):
+            return
         self._mic_ready = bool(info.get("mic_ok"))
         if self._mic_ready:
             self.voice_label.setText("Voz: micrófono listo")
@@ -466,6 +508,9 @@ class JarvisWindow(QWidget):
         self.tts.say(text)
         self._set_state("speaking" if self.tts.enabled and text else "idle")
         self._update_memory_label()
+        # El contador de gasto solo cambia cuando se ha consultado a la API,
+        # que es justo lo que acaba de pasar.
+        self._update_cost_label()
 
     @pyqtSlot(str)
     def _on_worker_error(self, message: str) -> None:
@@ -678,6 +723,7 @@ class JarvisWindow(QWidget):
             self.bar_battery.set_value(0, text="n/d")
 
         self._update_memory_label()
+        self._update_cost_label()
 
     def _check_reminders(self) -> None:
         """Avisa cuando vence un temporizador o una alarma."""
@@ -704,11 +750,29 @@ class JarvisWindow(QWidget):
             f"{len(pendientes)} aviso(s) · el próximo en {siguiente.describe_remaining()}")
         self.reminder_label.setToolTip("\n".join(r.describe() for r in pendientes))
 
+    def _update_cost_label(self) -> None:
+        """Cuánto lleva gastado en la API, para que no haya sorpresas.
+
+        Solo aparece con Claude: con un modelo local no hay nada que contar.
+        """
+        uso = getattr(self.llm, "usage", None)
+        if uso is None or not config.get("claude.show_cost", True):
+            self.cost_label.setVisible(False)
+            return
+        self.cost_label.setVisible(True)
+        self.cost_label.setText(f"Gasto: {uso.resumen()}")
+        self.cost_label.setToolTip(
+            f"{uso.requests} consulta(s) a la API.\n"
+            f"{uso.input_tokens} tokens de entrada, {uso.output_tokens} de salida.\n"
+            "Estimación con precios de lista; la factura real la da Anthropic.")
+
     def _update_memory_label(self) -> None:
         stats = self.memory.stats()
+        # Todo en una linea: la columna es estrecha y cada linea que se ahorra
+        # es una linea que no hay que recortar en pantallas bajas.
         self.memory_label.setText(
-            f"Memoria: {stats['turnos']} turnos · {stats['hechos']} notas\n"
-            f"Sesión: {stats['sesion']}"
+            f"Memoria: {stats['turnos']} turnos · {stats['hechos']} notas "
+            f"· {stats['sesion']}"
         )
 
     # ==================================================================
@@ -738,16 +802,30 @@ class JarvisWindow(QWidget):
         except Exception:
             modelos = []
 
+        from ..core.llm import current_provider
+
+        proveedor_antes = current_provider()
         dialogo = SettingsDialog(self, modelos=modelos, voces=self.tts.list_voices())
         if not dialogo.exec():
             return
 
         # Lo que se puede aplicar sin reiniciar, se aplica ya.
-        nuevo_modelo = str(config.get("ollama.model", self.llm.model))
-        if nuevo_modelo != self.llm.model:
-            self.llm.model = nuevo_modelo
-            self.model_label.setText(f"Ollama: en línea\nModelo: {nuevo_modelo}")
-            self.chat.add_message("system", f"Modelo cambiado a {nuevo_modelo}.")
+        from ..core.llm import create_client, current_provider, describe
+
+        # Cambiar de proveedor no es cambiar un ajuste: es otro cliente, con
+        # otra clave y otra forma de fallar, asi que se crea de cero.
+        if current_provider() != proveedor_antes:
+            self.llm = create_client()
+            self.assistant.llm = self.llm
+            self.chat.add_message("system", f"Cerebro cambiado a {describe(self.llm)}.")
+            self._comprobar_nucleo()
+        else:
+            clave = ("claude.model" if current_provider() == "claude" else "ollama.model")
+            nuevo_modelo = str(config.get(clave, self.llm.model))
+            if nuevo_modelo != self.llm.model:
+                self.llm.model = nuevo_modelo
+                self.chat.add_message("system", f"Modelo cambiado a {nuevo_modelo}.")
+                self._comprobar_nucleo()
 
         self.memory.max_turns = int(config.get("memory.max_turns", 40))
         self.tts.set_enabled(bool(config.get("voice.tts_enabled", True)))
@@ -759,6 +837,17 @@ class JarvisWindow(QWidget):
                 "Ajustes guardados. Los cambios de aspecto se verán al reiniciar el asistente.")
         else:
             self.chat.add_message("system", "Ajustes guardados.")
+
+    def _comprobar_nucleo(self) -> None:
+        """Relanza la comprobación del cerebro tras cambiarlo en los ajustes."""
+        if self._closing:
+            return
+        comprobacion = getattr(self, "_check", None)
+        if comprobacion is not None and comprobacion.isRunning():
+            return
+        self._check = StartupCheckWorker(self.llm, None, parent=self)
+        self._check.report.connect(self._on_startup_report)
+        self._check.start()
 
     def _toggle_maximized(self) -> None:
         if self.isMaximized():

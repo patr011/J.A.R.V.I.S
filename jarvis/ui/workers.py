@@ -13,6 +13,7 @@ from typing import Callable
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from ..core.assistant import Assistant
+from ..core.llm import current_provider, describe
 from ..core.ollama_client import OllamaClient, suggest_model
 from ..core.speech import SpeechToText
 
@@ -161,12 +162,16 @@ class StartupCheckWorker(QThread):
 
     def run(self) -> None:                     # noqa: D102
         info: dict[str, object] = {
+            "provider": current_provider(),
+            "descripcion": describe(self.llm),
+            "error": getattr(self.llm, "error", ""),
             "ollama_running": False,
             "models": [],
             "model_ready": False,
             "model": self.llm.model,
             "suggestion": None,
             "hardware": {},
+            "mic_checked": self.stt is not None,
             "mic_ok": False,
             "mic_message": "",
         }
@@ -179,10 +184,17 @@ class StartupCheckWorker(QThread):
                 if resolved:
                     info["model"] = resolved
                     info["model_ready"] = True
-        except Exception:
-            pass
+            else:
+                info["error"] = getattr(self.llm, "error", "") or info["error"]
+        except Exception as exc:
+            info["error"] = str(exc)
 
+        # La recomendacion de modelo segun el hardware solo aplica a Ollama:
+        # con Claude el modelo corre en los servidores de Anthropic y da igual
+        # la RAM que tenga el equipo.
         try:
+            if info["provider"] != "ollama":
+                raise StopIteration
             suggestion, hardware = suggest_model()
             info["suggestion"] = {
                 "name": suggestion.name,
@@ -191,6 +203,8 @@ class StartupCheckWorker(QThread):
                 "command": suggestion.command,
             }
             info["hardware"] = hardware
+        except StopIteration:
+            pass
         except Exception:
             pass
 

@@ -6,10 +6,39 @@ import math
 
 from PyQt6.QtCore import QRectF, Qt, QTimer
 from PyQt6.QtGui import QColor, QFont, QPainter, QPen
-from PyQt6.QtWidgets import QWidget
+from PyQt6.QtWidgets import QLabel, QWidget
 
 from ...config import config
 from ..theme import theme
+
+
+class WrapLabel(QLabel):
+    """Etiqueta que reserva de verdad el alto que necesita su texto.
+
+    Con setWordWrap, QLabel le dice al layout que le basta con una linea.
+    Cuando el sitio escasea, el layout se lo cree y le da esa altura: el
+    resto del texto desaparece sin ningun aviso (asi se perdia la linea de
+    la clave de la API en el panel lateral). Recalcular el minimo cada vez
+    que cambia el texto o el ancho lo impide.
+    """
+
+    def __init__(self, text: str = "", parent: QWidget | None = None) -> None:
+        super().__init__(text, parent)
+        self.setWordWrap(True)
+        self._ajustar_alto()
+
+    def setText(self, text: str) -> None:           # noqa: N802 (nombre de Qt)
+        super().setText(text)
+        self._ajustar_alto()
+
+    def resizeEvent(self, event) -> None:           # noqa: N802 (nombre de Qt)
+        super().resizeEvent(event)
+        self._ajustar_alto()
+
+    def _ajustar_alto(self) -> None:
+        alto = self.heightForWidth(max(self.width(), 1))
+        if alto > 0 and alto != self.minimumHeight():
+            self.setMinimumHeight(alto)
 
 
 class HudBackground(QWidget):
@@ -88,7 +117,7 @@ class StatBar(QWidget):
         self._target = 0.0
         self._suffix = "%"
         self._enabled_text = ""
-        self.setFixedHeight(30)
+        self.setFixedHeight(26)
 
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._animate)

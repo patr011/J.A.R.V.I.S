@@ -151,3 +151,95 @@ def test_sin_bandeja_disponible_la_ventana_sigue_funcionando(ventana):
 def test_salir_de_verdad_no_se_queda_escondido(ventana):
     ventana.quit_completely()
     assert ventana._salir_de_verdad
+
+
+# --------------------------------------------------------------------------
+# Contador de gasto de la API
+# --------------------------------------------------------------------------
+
+def test_el_gasto_de_la_api_llega_al_panel(ventana):
+    """El contador no sirve de nada si nadie lo refresca.
+
+    Estuvo escrito pero sin llamar: el panel se quedaba siempre vacío.
+    """
+    from jarvis.core.claude_client import Usage
+
+    uso = Usage()
+    uso.add("claude-sonnet-5", 812, 96)
+    ventana.llm.usage = uso
+
+    ventana._update_stats()          # es el reloj que refresca el panel
+
+    assert ventana.cost_label.isVisibleTo(ventana.cost_label.parentWidget())
+    texto = ventana.cost_label.text()
+    assert "1 consulta" in texto
+    assert "$" in texto
+    # Una sola línea: la columna es estrecha y dos líneas empujaban el resto.
+    assert "\n" not in texto
+    # El desglose no se pierde: se enseña al pasar el ratón.
+    assert "812 tokens de entrada" in ventana.cost_label.toolTip()
+
+
+def test_sin_consultas_el_gasto_no_estorba(ventana):
+    from jarvis.core.claude_client import Usage
+
+    ventana.llm.usage = Usage()
+    ventana._update_stats()
+    assert "Sin consultas" in ventana.cost_label.text()
+
+
+def test_con_modelo_local_no_se_enseña_gasto(ventana):
+    """Ollama es gratis: enseñar un contador de dinero solo confundiría."""
+    class SinCoste:
+        pass
+
+    ventana.llm = SinCoste()
+    ventana._update_stats()
+    # isVisibleTo y no isVisible: la ventana de prueba no está en pantalla,
+    # asi que isVisible daria False siempre y la prueba no probaria nada.
+    assert not ventana.cost_label.isVisibleTo(ventana.cost_label.parentWidget())
+
+
+# --------------------------------------------------------------------------
+# El panel lateral no puede recortar texto
+# --------------------------------------------------------------------------
+
+ETIQUETAS_PANEL = ("model_label", "memory_label", "voice_label",
+                   "reminder_label", "cost_label")
+
+
+@pytest.mark.parametrize("alto", [700, 740, 900])
+def test_el_panel_lateral_nunca_recorta_texto(ventana, alto):
+    """Con poca altura, Qt encogia las etiquetas y borraba lineas enteras.
+
+    Asi desaparecio la linea «Clave: sk-ant-…» del panel NÚCLEO IA. El
+    reactor puede achicarse; el texto no.
+    """
+    from jarvis.core.claude_client import Usage
+
+    uso = Usage()
+    uso.add("claude-sonnet-5", 812, 96)
+    ventana.llm.usage = uso
+    ventana.model_label.setText(
+        "Claude: conectado\nModelo: Claude Sonnet 5\nClave: sk-ant-…9zK1")
+    ventana.voice_label.setText("Voz: pyttsx3 no está instalado (pip install pyttsx3).")
+    ventana._update_cost_label()
+    ventana._update_memory_label()
+
+    ventana.resize(900, alto)
+    ventana.show()
+    QApplication.processEvents()
+
+    for nombre in ETIQUETAS_PANEL:
+        etiqueta = getattr(ventana, nombre)
+        if not etiqueta.isVisibleTo(etiqueta.parentWidget()):
+            continue
+        necesita = etiqueta.heightForWidth(etiqueta.width())
+        assert etiqueta.height() >= necesita, (
+            f"«{nombre}» se queda en {etiqueta.height()}px y necesita "
+            f"{necesita}px: se está recortando texto")
+
+
+def test_la_ventana_no_puede_hacerse_tan_pequeña_que_recorte(ventana):
+    """El minimo de la ventana tiene que dar de si para la columna entera."""
+    assert ventana.minimumHeight() >= 700

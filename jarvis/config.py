@@ -31,7 +31,31 @@ DEFAULTS: dict[str, Any] = {
     "user_title": "Señor",          # como te llama el asistente
     "language": "es",                # "es" o "en"
 
-    # ---- Ollama ----
+    # ---- Qué cerebro usa para conversar ----
+    #   "claude" = la API de Anthropic (de pago, necesita clave y conexión)
+    #   "ollama" = un modelo local (gratis, sin internet, algo más flojo)
+    "llm": {
+        "provider": "claude",
+    },
+
+    # ---- API de Claude ----
+    # La clave NO se guarda aquí. Va en ~/.jarvis/.env o en la variable de
+    # entorno ANTHROPIC_API_KEY. Ver el README.
+    "claude": {
+        "model": "claude-sonnet-5",
+        # Tope de la respuesta. Como el asistente la lee en voz alta,
+        # interesa que sea corta: 1024 tokens son unas 700 palabras.
+        "max_tokens": 1024,
+        # low | medium | high | xhigh | max. Para conversación, "low" responde
+        # rápido y de sobra; súbalo si le pide análisis o código.
+        "effort": "low",
+        # Pensar antes de responder da mejores respuestas pero añade espera.
+        "thinking": False,
+        "timeout": 60,
+        "show_cost": True,
+    },
+
+    # ---- Ollama (modelo local) ----
     "ollama": {
         "host": "http://localhost:11434",
         "model": "llama3.1:8b",      # cabe entero en los 8 GB de VRAM de una RTX 5050

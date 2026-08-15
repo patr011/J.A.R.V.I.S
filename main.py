@@ -46,6 +46,7 @@ def check_dependencies(verbose: bool = True) -> bool:
         "psutil": "psutil",
     }
     opcionales = {
+        "anthropic": "anthropic (API de Claude)",
         "pyttsx3": "pyttsx3 (voz del asistente)",
         "speech_recognition": "SpeechRecognition (micrófono)",
         "pyaudio": "PyAudio (micrófono)",
@@ -92,7 +93,7 @@ def run_diagnostics() -> int:
     print("\n--- LIBRERÍAS ---")
     ok = check_dependencies(verbose=True)
 
-    print("\n--- HARDWARE Y MODELO RECOMENDADO ---")
+    print("\n--- HARDWARE (solo importa para el modelo local) ---")
     suggestion, hardware = suggest_model()
     print(f"  RAM: {hardware.get('ram_gb', '?')} GB")
     print(f"  Núcleos: {hardware.get('cores', '?')}")
@@ -101,7 +102,41 @@ def run_diagnostics() -> int:
     print(f"  {suggestion.reason}")
     print(f"  Instálalo con:  {suggestion.command}")
 
-    print("\n--- OLLAMA ---")
+    print("\n--- NÚCLEO DE IA ---")
+    from jarvis.core.llm import PROVIDERS, current_provider
+    from jarvis.core.secrets import has_api_key, mask_api_key, where_to_put_the_key
+
+    proveedor = current_provider()
+    print(f"  Cerebro configurado: {PROVIDERS[proveedor]}")
+
+    if proveedor == "claude":
+        try:
+            import anthropic                                  # noqa: F401
+            print("  [OK]    Librería anthropic instalada")
+        except ImportError:
+            print("  [FALLO] Falta la librería. Ejecuta:  pip install anthropic")
+            return 1
+
+        if not has_api_key():
+            print("  [FALLO] No hay clave de API configurada.")
+            for linea in where_to_put_the_key().splitlines()[1:]:
+                print("  " + linea)
+            return 1
+
+        print(f"  [OK]    Clave detectada: {mask_api_key()}")
+        from jarvis.core.claude_client import ClaudeClient, model_info
+        cliente = ClaudeClient()
+        datos = model_info(cliente.model)
+        print(f"  Modelo: {datos.nombre}  ({datos.nota})")
+        print(f"  Precio: ${datos.entrada:.2f} entrada / ${datos.salida:.2f} salida "
+              "por millón de tokens")
+        if cliente.is_running():
+            print("  [OK]    La API responde correctamente")
+        else:
+            print(f"  [FALLO] {cliente.error}")
+
+        print("\n--- OLLAMA (alternativa local, opcional) ---")
+
     llm = OllamaClient()
     if llm.is_running():
         print(f"  [OK]    Servidor activo en {llm.host}")
@@ -258,6 +293,12 @@ def main() -> int:
 
     setup_logging(verbose=args.consola or args.check)
     install_exception_hook()
+
+    # Los .env se leen al arrancar para que la clave este disponible en todo
+    # el programa. Nunca se escribe en el log ni en la configuracion.
+    from jarvis.core.secrets import load_env_files
+    for ruta in load_env_files():
+        get_logger("arranque").info("Variables leidas de %s", ruta)
 
     if args.modelo:
         config.set("ollama.model", args.modelo)

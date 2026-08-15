@@ -87,13 +87,13 @@ echo  Actualizando pip ...
 python -m pip install --upgrade pip --quiet
 
 echo  Instalando las librerias obligatorias ...
-python -m pip install PyQt6 requests psutil --quiet
+python -m pip install PyQt6 requests psutil anthropic --quiet
 if errorlevel 1 (
     echo  [ERROR] Fallo instalando las librerias obligatorias.
     pause
     exit /b 1
 )
-echo  [OK] PyQt6, requests y psutil instalados.
+echo  [OK] PyQt6, requests, psutil y anthropic instalados.
 
 echo.
 echo  Instalando las librerias opcionales (voz, volumen, brillo) ...
@@ -119,8 +119,13 @@ echo.
 echo  ================================================================
 echo    Instalacion terminada.
 echo.
-echo    Siguiente paso: instala Ollama desde https://ollama.com/download
-echo    y descarga el modelo que te ha recomendado el diagnostico.
+echo    Siguiente paso: pon tu clave de la API de Claude.
+echo      1. Sacala en https://console.anthropic.com/settings/keys
+echo      2. Crea el archivo  %%USERPROFILE%%\.jarvis\.env
+echo      3. Escribe dentro:  ANTHROPIC_API_KEY=sk-ant-...
+echo.
+echo    (Si prefieres no pagar, puedes seguir usando Ollama en local:
+echo     cambia el cerebro en los ajustes del propio asistente.)
 echo.
 echo    Para arrancar el asistente, haz doble clic en  ejecutar.bat
 echo  ================================================================

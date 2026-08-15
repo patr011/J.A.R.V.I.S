@@ -9,6 +9,14 @@ __pycache__/
 venv/
 env/
 
+# CLAVES: nunca deben subirse al repositorio.
+# El .env.example si se sube (es la plantilla, sin clave real).
+.env
+.env.*
+!.env.example
+*.key
+secrets.json
+
 # Configuracion y memoria locales (se generan solos en ~/.jarvis)
 .jarvis/
 *.log

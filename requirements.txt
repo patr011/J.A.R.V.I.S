@@ -6,6 +6,10 @@
 # --- Interfaz grafica (obligatorio) ---
 PyQt6>=6.6.0
 
+# --- API de Claude (obligatorio si usas Claude como cerebro) ---
+# La clave NO va aqui ni en el codigo: va en un archivo .env.
+anthropic>=0.69.0
+
 # --- Conexion con Ollama / peticiones HTTP (obligatorio) ---
 requests>=2.31.0
 

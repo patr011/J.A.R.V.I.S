@@ -15,6 +15,14 @@ from PyQt6.QtWidgets import (
 
 from ..config import CONFIG_FILE, config
 from .theme import theme
+from .widgets.hud import WrapLabel
+
+# (nombre visible, para qué sirve) por modelo.
+MODELOS_CLAUDE = {
+    "claude-sonnet-5": ("Claude Sonnet 5", "recomendado"),
+    "claude-haiku-4-5": ("Claude Haiku 4.5", "el más barato"),
+    "claude-opus-5": ("Claude Opus 5", "el más capaz"),
+}
 
 COLORES = {
     "Cian (Iron Man)": "#00E5FF",
@@ -33,7 +41,7 @@ class SettingsDialog(QDialog):
                  voces: list[tuple[str, str]] | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("J.A.R.V.I.S. — Ajustes")
-        self.setMinimumWidth(620)
+        self.setMinimumWidth(660)
         self.setStyleSheet(theme.stylesheet())
         self.necesita_reinicio = False
 
@@ -55,9 +63,8 @@ class SettingsDialog(QDialog):
         pestañas.addTab(self._pestaña_aspecto(), "Aspecto")
         layout.addWidget(pestañas)
 
-        ruta = QLabel(f"El archivo de configuración está en:\n{CONFIG_FILE}")
+        ruta = WrapLabel(f"El archivo de configuración está en:\n{CONFIG_FILE}")
         ruta.setObjectName("hint")
-        ruta.setWordWrap(True)
         layout.addWidget(ruta)
 
         botones = QHBoxLayout()
@@ -108,11 +115,10 @@ class SettingsDialog(QDialog):
         self.confirmar.setChecked(bool(config.get("commands.confirm_dangerous", True)))
         form.addRow(self.confirmar)
 
-        aviso = QLabel(
+        aviso = WrapLabel(
             "Desactivar la confirmación es peligroso: un «apaga el equipo» mal "
             "entendido por el micrófono apagaría el ordenador sin preguntar.")
         aviso.setObjectName("hint")
-        aviso.setWordWrap(True)
         form.addRow(aviso)
 
         self.margen = QSpinBox()
@@ -126,21 +132,72 @@ class SettingsDialog(QDialog):
     def _pestaña_ia(self) -> QWidget:
         pagina, form = self._pagina()
 
+        # --- qué cerebro responde ---
+        self.proveedor = QComboBox()
+        self.proveedor.addItem("API de Claude (Anthropic)", "claude")
+        self.proveedor.addItem("Modelo local con Ollama", "ollama")
+        indice = self.proveedor.findData(
+            str(config.get("llm.provider", "claude")).lower())
+        self.proveedor.setCurrentIndex(max(0, indice))
+        self.proveedor.currentIndexChanged.connect(self._cambiar_proveedor)
+        form.addRow("Cerebro:", self.proveedor)
+
+        self.nota_proveedor = WrapLabel()
+        self.nota_proveedor.setObjectName("hint")
+        form.addRow(self.nota_proveedor)
+
+        # --- Claude ---
+        self.modelo_claude = QComboBox()
+        for clave, datos in MODELOS_CLAUDE.items():
+            self.modelo_claude.addItem(f"{datos[0]} — {datos[1]}", clave)
+        indice = self.modelo_claude.findData(
+            str(config.get("claude.model", "claude-sonnet-5")))
+        self.modelo_claude.setCurrentIndex(max(0, indice))
+        self.fila_modelo_claude = ("Modelo de Claude:", self.modelo_claude)
+        form.addRow(*self.fila_modelo_claude)
+
+        self.clave_label = WrapLabel()
+        self.clave_label.setObjectName("hint")
+        form.addRow(self.clave_label)
+
+        self.longitud = QSpinBox()
+        self.longitud.setRange(256, 8192)
+        self.longitud.setSingleStep(256)
+        self.longitud.setSuffix(" tokens")
+        self.longitud.setValue(int(config.get("claude.max_tokens", 1024)))
+        self.longitud.setToolTip(
+            "Tope de la respuesta. 1024 tokens ≈ 700 palabras.\n"
+            "Cuanto más alto, más puede extenderse (y más cuesta).")
+        form.addRow("Longitud máxima:", self.longitud)
+
+        self.esfuerzo = QComboBox()
+        for etiqueta, valor in [("Bajo — respuestas rápidas (recomendado)", "low"),
+                                ("Medio — equilibrado", "medium"),
+                                ("Alto — piensa más, tarda más", "high")]:
+            self.esfuerzo.addItem(etiqueta, valor)
+        indice = self.esfuerzo.findData(str(config.get("claude.effort", "low")))
+        self.esfuerzo.setCurrentIndex(max(0, indice))
+        form.addRow("Esfuerzo:", self.esfuerzo)
+
+        self.pensar = QCheckBox("Razonar antes de responder")
+        self.pensar.setToolTip(
+            "Claude piensa unos segundos antes de contestar.\n"
+            "Acierta más en preguntas difíciles, pero tarda más y cuesta más.")
+        self.pensar.setChecked(bool(config.get("claude.thinking", False)))
+        form.addRow(self.pensar)
+
+        self.ver_gasto = QCheckBox("Mostrar el gasto estimado en el panel")
+        self.ver_gasto.setChecked(bool(config.get("claude.show_cost", True)))
+        form.addRow(self.ver_gasto)
+
+        # --- Ollama ---
         self.modelo = QComboBox()
         self.modelo.setEditable(True)
         actual = str(config.get("ollama.model", "llama3.1:8b"))
         opciones = list(dict.fromkeys(self._modelos + [actual]))
         self.modelo.addItems(opciones)
         self.modelo.setCurrentText(actual)
-        form.addRow("Modelo:", self.modelo)
-
-        if self._modelos:
-            nota = QLabel("Estos son los modelos que tienes descargados.")
-        else:
-            nota = QLabel("No he podido leer tus modelos: ¿está Ollama en marcha?")
-        nota.setObjectName("hint")
-        nota.setWordWrap(True)
-        form.addRow(nota)
+        form.addRow("Modelo local:", self.modelo)
 
         self.temperatura = QSlider(Qt.Orientation.Horizontal)
         self.temperatura.setRange(0, 100)
@@ -151,9 +208,9 @@ class SettingsDialog(QDialog):
         fila = QHBoxLayout()
         fila.addWidget(self.temperatura, 1)
         fila.addWidget(self.etiqueta_temp)
-        contenedor = QWidget()
-        contenedor.setLayout(fila)
-        form.addRow("Creatividad:", contenedor)
+        self.caja_temperatura = QWidget()
+        self.caja_temperatura.setLayout(fila)
+        form.addRow("Creatividad:", self.caja_temperatura)
 
         self.contexto = QSpinBox()
         self.contexto.setRange(1024, 32768)
@@ -161,12 +218,55 @@ class SettingsDialog(QDialog):
         self.contexto.setValue(int(config.get("ollama.num_ctx", 8192)))
         form.addRow("Memoria del modelo:", self.contexto)
 
+        # --- común ---
         self.turnos = QSpinBox()
         self.turnos.setRange(6, 200)
         self.turnos.setValue(int(config.get("memory.max_turns", 40)))
         form.addRow("Turnos recordados:", self.turnos)
 
+        self._formulario_ia = form
+        self._cambiar_proveedor()
         return pagina
+
+    def _cambiar_proveedor(self) -> None:
+        """Enseña solo los ajustes del cerebro elegido.
+
+        Los dos juegos de opciones no se parecen —Claude no admite
+        «creatividad», Ollama no tiene clave ni coste—, así que mezclarlos en
+        pantalla solo confundiría.
+        """
+        from ..core.secrets import has_api_key, mask_api_key
+
+        es_claude = self.proveedor.currentData() == "claude"
+
+        for widget in (self.modelo_claude, self.clave_label, self.longitud,
+                       self.esfuerzo, self.pensar, self.ver_gasto):
+            self._mostrar_fila(widget, es_claude)
+        for widget in (self.modelo, self.caja_temperatura, self.contexto):
+            self._mostrar_fila(widget, not es_claude)
+
+        if es_claude:
+            self.nota_proveedor.setText(
+                "Las respuestas las genera Claude en los servidores de Anthropic. "
+                "Necesita conexión a internet y consume crédito de su cuenta.")
+            if has_api_key():
+                self.clave_label.setText(f"Clave detectada: {mask_api_key()}")
+            else:
+                self.clave_label.setText(
+                    "⚠ No hay clave configurada. Cree el archivo "
+                    f"{CONFIG_FILE.parent / '.env'} con la línea:\n"
+                    "    ANTHROPIC_API_KEY=sk-ant-...")
+        else:
+            self.nota_proveedor.setText(
+                "Las respuestas las genera un modelo en su propio equipo. "
+                "Gratis y sin internet, pero de menor calidad y más lento.")
+
+    def _mostrar_fila(self, widget, visible: bool) -> None:
+        """Oculta un campo y su etiqueta a la vez."""
+        widget.setVisible(visible)
+        etiqueta = self._formulario_ia.labelForField(widget)
+        if etiqueta is not None:
+            etiqueta.setVisible(visible)
 
     def _actualizar_temp(self, valor: int) -> None:
         if valor <= 30:
@@ -250,9 +350,8 @@ class SettingsDialog(QDialog):
         self.maximizada.setChecked(bool(config.get("ui.start_maximized", False)))
         form.addRow(self.maximizada)
 
-        nota = QLabel("Los cambios de aspecto se aplican al reiniciar el asistente.")
+        nota = WrapLabel("Los cambios de aspecto se aplican al reiniciar el asistente.")
         nota.setObjectName("hint")
-        nota.setWordWrap(True)
         form.addRow(nota)
 
         return pagina
@@ -275,6 +374,14 @@ class SettingsDialog(QDialog):
         config.set("commands.search_paths", carpetas)
         config.set("commands.confirm_dangerous", self.confirmar.isChecked())
         config.set("commands.shutdown_delay", self.margen.value())
+
+        config.set("llm.provider", self.proveedor.currentData())
+
+        config.set("claude.model", self.modelo_claude.currentData())
+        config.set("claude.max_tokens", self.longitud.value())
+        config.set("claude.effort", self.esfuerzo.currentData())
+        config.set("claude.thinking", self.pensar.isChecked())
+        config.set("claude.show_cost", self.ver_gasto.isChecked())
 
         config.set("ollama.model", self.modelo.currentText().strip())
         config.set("ollama.temperature", self.temperatura.value() / 100)

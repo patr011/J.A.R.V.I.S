@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import math
 
-from PyQt6.QtCore import QPointF, QRectF, Qt, QTimer
+from PyQt6.QtCore import QPointF, QRectF, QSize, Qt, QTimer
 from PyQt6.QtGui import QColor, QPainter, QPainterPath, QPen, QRadialGradient
 from PyQt6.QtWidgets import QWidget
 
@@ -40,7 +40,11 @@ STATE_SPEED = {
 class ArcReactor(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setMinimumSize(210, 210)
+        # Minimo pequeño y tamaño preferido grande: el reactor es lo unico
+        # de la columna que puede encogerse sin perder informacion, asi que
+        # en una pantalla baja cede su sitio a los textos en vez de
+        # recortarlos.
+        self.setMinimumSize(110, 110)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
         self._angle = 0.0
@@ -66,6 +70,10 @@ class ArcReactor(QWidget):
     def set_level(self, level: float) -> None:
         """Intensidad extra del nucleo (0..1), util al hablar o escuchar."""
         self._level = max(0.0, min(1.0, level))
+
+    def sizeHint(self) -> QSize:                    # noqa: N802 (nombre de Qt)
+        """Tamaño al que aspira cuando hay sitio de sobra."""
+        return QSize(210, 210)
 
     # -- animacion -------------------------------------------------------
 

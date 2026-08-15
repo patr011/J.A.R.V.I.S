@@ -23,7 +23,8 @@ from ..commands.reminders import ReminderManager
 from ..config import config
 from ..logging_setup import get_logger
 from .memory import Memory
-from .ollama_client import OllamaClient, OllamaError, build_system_prompt
+from .llm import LLMError, create_client, describe
+from .prompts import build_system_prompt
 
 log = get_logger("asistente")
 
@@ -40,10 +41,11 @@ class Response:
 
 
 class Assistant:
-    def __init__(self, memory: Memory | None = None, llm: OllamaClient | None = None,
+    def __init__(self, memory: Memory | None = None, llm=None,
                  reminders: ReminderManager | None = None) -> None:
         self.memory = memory or Memory()
-        self.llm = llm or OllamaClient()
+        # `llm` es cualquier cliente con la interfaz comun: Claude u Ollama.
+        self.llm = llm if llm is not None else create_client()
         self.reminders = reminders or ReminderManager()
         self.router = CommandRouter(memory=self.memory, reminder_manager=self.reminders)
         self._pending: CommandResult | None = None
@@ -149,8 +151,8 @@ class Assistant:
 
         try:
             answer = self.llm.chat_stream(messages, on_token=on_token)
-        except OllamaError as exc:
-            log.warning("Ollama no ha respondido: %s", exc)
+        except LLMError as exc:
+            log.warning("El modelo no ha respondido: %s", exc)
             # Los errores de conexion no se guardan en la memoria: solo
             # ensuciarian el contexto que se le manda al modelo despues.
             return Response(str(exc), source="llm", ok=False)
@@ -169,15 +171,26 @@ class Assistant:
 
     def llm_status(self) -> tuple[bool, str]:
         """(esta_listo, mensaje) para mostrar en la interfaz."""
+        # Cada proveedor falla por motivos distintos y con soluciones
+        # distintas, asi que el mensaje lo da el propio cliente cuando puede.
+        error_propio = getattr(self.llm, "error", "")
+        if error_propio and not getattr(self.llm, "ready", True):
+            return False, error_propio
+
         if not self.llm.is_running():
-            return False, ("Ollama no responde. Abra una terminal y ejecute:  ollama serve")
+            fallo = getattr(self.llm, "error", "")
+            if fallo:
+                return False, fallo
+            return False, "Ollama no responde. Abra una terminal y ejecute:  ollama serve"
+
         model = self.llm.resolve_model()
         if model is None:
             return False, ("Ollama está en marcha pero no hay ningún modelo descargado. "
                            f"Ejecute:  ollama pull {self.llm.model}")
+
+        # Solo Ollama cambia de modelo sobre la marcha (usa el que haya).
         if model != self.llm.model:
             self.llm.model = model
             config.set("ollama.model", model)
             config.save()
-            return True, f"Modelo en uso: {model}"
-        return True, f"Modelo en uso: {model}"
+        return True, describe(self.llm)

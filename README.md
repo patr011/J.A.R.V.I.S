@@ -1,10 +1,21 @@
 # J.A.R.V.I.S. — Asistente de escritorio para Windows
 
-Un asistente personal que corre **entero en tu ordenador**, sin claves de API ni
-servicios de pago. Habla contigo, abre tus programas, busca tus archivos, pone
-música, te dice el tiempo, te avisa con temporizadores, controla el volumen y
-el brillo, apaga el equipo (pidiéndote confirmación antes) y contesta a
-cualquier pregunta usando un modelo de lenguaje local a través de **Ollama**.
+Un asistente personal de escritorio. Habla contigo, abre y cierra tus programas,
+busca tus archivos, pone música, te dice el tiempo, te avisa con temporizadores,
+controla el volumen y el brillo, apaga el equipo (pidiéndote confirmación antes)
+y contesta a cualquier pregunta.
+
+Para conversar puedes elegir **cualquiera de los dos cerebros**, y cambiar entre
+ellos desde los ajustes:
+
+| Cerebro | Cuándo usarlo |
+|---|---|
+| **API de Claude** (por defecto) | Respuestas mucho mejores. Necesita clave e internet, y consume crédito de tu cuenta. |
+| **Modelo local con Ollama** | Gratis, sin internet y privado. Más flojo y más lento. |
+
+Las órdenes del sistema (abrir programas, música, volumen, alarmas, cuentas)
+**no pasan por ningún modelo**: las resuelve el propio programa, así que son
+instantáneas y no cuestan nada.
 
 Responde por texto o por voz, y en modo manos libres basta con decir
 **«Oye JARVIS»**.
@@ -24,8 +35,8 @@ animados y un reactor arc que reacciona a lo que está haciendo el asistente.
    - [Paso 1 — Instalar Python](#paso-1--instalar-python)
    - [Paso 2 — Descargar el proyecto](#paso-2--descargar-el-proyecto)
    - [Paso 3 — Instalar las librerías](#paso-3--instalar-las-librerías)
-   - [Paso 4 — Instalar Ollama](#paso-4--instalar-ollama)
-   - [Paso 5 — Elegir y descargar el modelo](#paso-5--elegir-y-descargar-el-modelo)
+   - [Paso 4 — Poner la clave de la API de Claude](#paso-4--poner-la-clave-de-la-api-de-claude)
+   - [Paso 5 — Alternativa gratis: Ollama en local](#paso-5--alternativa-gratis-ollama-en-local)
    - [Paso 6 — Arrancar el programa](#paso-6--arrancar-el-programa-por-primera-vez)
 4. [Cómo se usa](#4-cómo-se-usa)
 5. [Configuración](#5-configuración)
@@ -53,7 +64,7 @@ animados y un reactor arc que reacciona a lo que está haciendo el asistente.
 | **Energía** ⚠️ | «apaga el equipo», «reinicia», «suspende», «bloquea el equipo», «cancela el apagado» |
 | **Memoria** | «recuerda que mañana tengo dentista», «¿qué te dije?», «olvida todo» |
 | **Sistema** | «estado del sistema», «qué hora es», «captura de pantalla» |
-| **Cualquier otra cosa** | «¿por qué el cielo es azul?», «escríbeme un correo de disculpa», «explícame las listas en Python» |
+| **Cualquier otra cosa** | «¿por qué el cielo es azul?», «escríbeme un correo de disculpa», «explícame las listas en Python» — esto sí va al modelo |
 
 **Manos libres**: pulsa **F4** y a partir de ahí basta con decir **«Oye JARVIS,
 pon música»** sin tocar el teclado.
@@ -83,6 +94,7 @@ J.A.R.V.I.S/
 ├── main.py                  ← ARRANCA AQUÍ. Conecta todas las piezas.
 ├── probar.py                ← ejecuta las pruebas
 ├── requirements.txt         ← lista de librerías
+├── .env.example             ← plantilla para tu clave (el .env real no se sube)
 ├── instalar.bat             ← instalación automática (doble clic)
 ├── ejecutar.bat             ← arranca el asistente (doble clic)
 │
@@ -92,8 +104,12 @@ J.A.R.V.I.S/
 │   │
 │   ├── core/                ← el cerebro
 │   │   ├── assistant.py     ← decide: ¿es un comando o una pregunta al modelo?
-│   │   ├── memory.py        ← memoria de la conversación y notas permanentes
+│   │   ├── llm.py           ← elige el cerebro: Claude u Ollama
+│   │   ├── claude_client.py ← conexión con la API de Claude
 │   │   ├── ollama_client.py ← conexión con el modelo local de Ollama
+│   │   ├── secrets.py       ← lee la clave del .env (nunca del código)
+│   │   ├── prompts.py       ← el prompt de sistema de cada cerebro
+│   │   ├── memory.py        ← memoria de la conversación y notas permanentes
 │   │   └── speech.py        ← voz: hablar, oír y la palabra clave
 │   │
 │   ├── commands/            ← todo lo que puede hacer en tu equipo
@@ -121,12 +137,13 @@ J.A.R.V.I.S/
 │           ├── hud.py         ← rejilla de fondo y barras de estado
 │           └── waveform.py    ← la onda de audio animada
 │
-└── tests/                   ← 359 pruebas automáticas
+└── tests/                   ← 414 pruebas automáticas
 ```
 
-**La idea de la separación**: `commands/` no sabe nada de la interfaz,
-`ui/` no sabe nada de Ollama, y `core/assistant.py` es el único punto donde
-se juntan. Así puedes cambiar la interfaz sin tocar los comandos, o añadir
+**La idea de la separación**: `commands/` no sabe nada de la interfaz, `ui/`
+no sabe qué modelo hay detrás, y `core/assistant.py` es el único punto donde
+se juntan. Los dos clientes —Claude y Ollama— exponen exactamente los mismos
+métodos, por eso se pueden intercambiar sin tocar nada más. Así puedes cambiar la interfaz sin tocar los comandos, o añadir
 comandos nuevos sin tocar la interfaz.
 
 ---
@@ -199,77 +216,92 @@ Qué instala cada librería:
 > no bloquea nada: el asistente sigue funcionando por texto. Mira la
 > [sección de problemas comunes](#6-problemas-comunes) para arreglarlo.
 
-### Paso 4 — Instalar Ollama
+### Paso 4 — Poner la clave de la API de Claude
 
-Ollama es el programa que ejecuta el modelo de inteligencia artificial en tu
-propio ordenador. Es gratuito y no necesita cuenta ni clave de API.
+El asistente usa la API de Claude para conversar. Necesitas una clave, y **la
+clave nunca se escribe en el código**: va en un archivo aparte que Git no sube.
 
-1. Entra en <https://ollama.com/download> y descarga **OllamaSetup.exe**.
-2. Instálalo con doble clic (siguiente, siguiente, terminar).
-3. Al terminar, Ollama arranca solo y se queda como un iconito de llama
-   junto al reloj, en la bandeja del sistema.
-4. Comprueba que funciona abriendo el *Símbolo del sistema* y escribiendo:
+**1. Consigue la clave**
 
-   ```bat
-   ollama --version
-   ```
+Entra en <https://console.anthropic.com/settings/keys>, crea una cuenta si no
+la tienes, añade algo de crédito y pulsa **Create Key**. Cópiala: empieza por
+`sk-ant-` y **solo se muestra una vez**.
 
-Si el icono de la llama no aparece, puedes arrancarlo a mano con:
+> Trátala como una contraseña. Quien la tenga puede gastar de tu cuenta. Si
+> alguna vez se te escapa (la pegas en un chat, la subes por error), entra en
+> esa misma página y bórrala: deja de funcionar al instante.
 
-```bat
-ollama serve
+**2. Guárdala en un archivo `.env`**
+
+Abre el Bloc de notas, escribe **una sola línea** con tu clave:
+
+```
+ANTHROPIC_API_KEY=sk-ant-api03-loquesea...
 ```
 
-(Deja esa ventana abierta mientras uses el asistente. El archivo
-`ejecutar.bat` intenta arrancarlo por ti automáticamente.)
+y guárdalo como:
 
-### Paso 5 — Elegir y descargar el modelo
+```
+C:\Users\TU_USUARIO\.jarvis\.env
+```
 
-**Deja que el propio programa te lo diga.** Ejecuta esto en la carpeta del
-proyecto:
+> **Ojo al guardar con el Bloc de notas**: en el diálogo, cambia *Tipo* a
+> «Todos los archivos», o te creará `.env.txt` y no lo encontrará. Si la
+> carpeta `.jarvis` no existe todavía, arranca el asistente una vez y se crea
+> sola.
+
+También vale poner el `.env` en la carpeta del proyecto (tienes la plantilla
+en `.env.example`), o definir la variable de entorno `ANTHROPIC_API_KEY` de
+Windows si prefieres. El orden de búsqueda es: variable de entorno → `.env`
+del proyecto → `.env` de `~/.jarvis`.
+
+**3. Comprueba que la detecta**
 
 ```bat
 python main.py --check
 ```
 
-Te dirá cuánta RAM y qué tarjeta gráfica tienes, y te recomendará el modelo
-concreto con el comando exacto para descargarlo. Esta es la tabla que usa:
+En la sección `NÚCLEO DE IA` debe salir:
 
-| Tu equipo | Modelo recomendado | Tamaño | Cómo va |
-|---|---|---|---|
-| **Menos de 8 GB de RAM** | `llama3.2:1b` | ~1,3 GB | Muy rápido, respuestas sencillas. Es lo que hay que usar en equipos justos. |
-| **8 – 16 GB de RAM** | `llama3.2:3b` | ~2,0 GB | **La opción recomendada para la mayoría.** Buen equilibrio entre velocidad y calidad. |
-| **16 GB o más** | `llama3.1:8b` | ~4,7 GB | Respuestas claramente mejores, tarda unos segundos más en CPU. |
-| **16 GB+ y GPU dedicada** (RTX/GTX/Radeon RX) | `llama3.1:8b` | ~4,7 GB | Muy buena calidad y casi instantáneo, porque la GPU hace el trabajo. **Es el que viene configurado por defecto.** |
-
-> **¿Por qué Llama y no Qwen?** Qwen 2.5 puntúa muy alto en las comparativas,
-> pero al escribir en español intercala caracteres chinos de vez en cuando. En
-> un asistente que además lee sus respuestas en voz alta, eso no vale. Llama
-> 3.1 es multilingüe de forma oficial y no tiene ese problema.
-
-> Con una gráfica de **8 GB de VRAM** (RTX 5050, 4060, 3070…) un modelo de
-> 7B u 8B cabe entero en la tarjeta, que es justo lo que hace que las
-> respuestas salgan al instante. Modelos de 14B en adelante se salen de esos
-> 8 GB, se reparten con la RAM del sistema y van mucho más lentos.
-
-Descarga el que te toque abriendo el *Símbolo del sistema* y escribiendo,
-por ejemplo:
-
-```bat
-ollama pull llama3.2:3b
+```
+[OK]    Clave detectada: sk-ant-…9zK1
+[OK]    La API responde correctamente
 ```
 
-La descarga tarda unos minutos. Para probar que responde:
+La clave aparece siempre enmascarada: ni el diagnóstico, ni el panel, ni el
+registro de errores la escriben entera en ningún sitio.
 
-```bat
-ollama run llama3.2:3b
-```
+**4. Elige el modelo (opcional)**
 
-Escribe cualquier cosa, y sal con `/bye`.
+| Modelo | Precio por millón de tokens | Cuándo |
+|---|---|---|
+| **`claude-sonnet-5`** | $3 entrada / $15 salida | **El que viene puesto.** El mejor equilibrio. |
+| `claude-haiku-4-5` | $1 / $5 | Si quieres gastar lo mínimo. De sobra para un asistente. |
+| `claude-opus-5` | $5 / $25 | El más capaz. Solo si le vas a pedir análisis o código serio. |
 
-> **Consejo:** empieza por el modelo pequeño. Si notas que responde rápido y
-> te sobra máquina, descarga el siguiente y cámbialo en la configuración
-> (o arranca con `python main.py --modelo llama3.1:8b`).
+Se cambia en los ajustes (**Ctrl+,** → pestaña *Núcleo IA*).
+
+**Sobre el gasto**: una conversación normal ronda los 500 tokens de entrada y
+150 de salida, o sea unas **cuatro décimas de céntimo por pregunta** con
+Sonnet 5. El panel lleva la cuenta en tiempo real para que no haya sorpresas.
+Como el asistente lee sus respuestas en voz alta, viene configurado para
+responder corto (1024 tokens de tope), lo que además abarata cada consulta.
+
+### Paso 5 — Alternativa gratis: Ollama en local
+
+Si prefieres no pagar, o quieres que el asistente funcione sin internet,
+puedes usar un modelo que corra en tu propio equipo. Es más flojo y más lento,
+pero es gratis y nada sale de tu ordenador.
+
+1. Instala Ollama desde <https://ollama.com/download>.
+2. Descarga un modelo. Ejecuta `python main.py --check` y te dirá cuál encaja
+   con tu equipo según la RAM y la tarjeta gráfica; con 16 GB y una GPU
+   dedicada será `ollama pull llama3.1:8b`.
+3. En el asistente, **Ctrl+,** → *Núcleo IA* → **Cerebro: Modelo local con Ollama**.
+
+El cambio es inmediato: no hace falta reiniciar. Puedes ir y volver entre los
+dos cerebros cuando quieras — por ejemplo, Claude en el día a día y Ollama
+cuando estés sin conexión.
 
 ### Paso 6 — Arrancar el programa por primera vez
 
@@ -386,14 +418,30 @@ C:\Users\TU_USUARIO\.jarvis\config.json
 ```
 
 En esa misma carpeta están tus datos: `memoria.json` (lo que le pediste
-recordar), `avisos.json` (alarmas), `notas.json` (listas) y `jarvis.log`
-(el registro de errores).
+recordar), `avisos.json` (alarmas), `notas.json` (listas), `jarvis.log`
+(el registro de errores) y `.env` (**tu clave de la API**).
+
+> **La clave vive solo en el `.env`.** No está en `config.json`, ni en el
+> código, ni en el registro de errores, y el `.gitignore` impide subirla a
+> GitHub. Si abres `config.json` verás ajustes del modelo, pero nunca la clave.
 
 Lo más útil de editar a mano:
 
 ```jsonc
 {
   "user_title": "Señor",            // cómo te llama el asistente
+
+  "llm": {
+    "provider": "claude"            // "claude" o "ollama"
+  },
+
+  "claude": {
+    "model": "claude-sonnet-5",
+    "max_tokens": 1024,             // tope de la respuesta (más = más caro)
+    "effort": "low",                // low | medium | high
+    "thinking": false,              // razonar antes de responder (más lento)
+    "show_cost": true               // enseñar el gasto en el panel
+  },
 
   "ollama": {
     "model": "llama3.2:3b",         // modelo que usa
@@ -443,6 +491,58 @@ Guarda el archivo y reinicia el asistente para que se apliquen los cambios.
 > **Antes de nada**: cuando algo falle, mira el registro de errores en
 > `C:\Users\TU_USUARIO\.jarvis\jarvis.log`. Como el asistente arranca sin
 > consola, ese archivo es donde queda apuntado todo lo que va mal.
+
+<details>
+<summary><b>«No encuentro la clave de la API de Claude»</b></summary>
+
+El asistente busca la clave en tres sitios, por este orden: la variable de
+entorno `ANTHROPIC_API_KEY`, el `.env` de la carpeta del proyecto y el `.env`
+de `C:\Users\TU_USUARIO\.jarvis\`.
+
+Lo que más falla es el Bloc de notas: al guardar crea `.env.txt` en vez de
+`.env`. Comprueba el nombre real activando *Ver → Extensiones de nombre de
+archivo* en el Explorador. Para verlo desde una terminal:
+
+```bat
+dir /a "%USERPROFILE%\.jarvis"
+```
+
+Y para confirmar que la detecta:  `python main.py --check`
+</details>
+
+<details>
+<summary><b>«La clave de la API no es válida»</b></summary>
+
+- Comprueba que la copiaste entera: empieza por `sk-ant-` y es larga.
+- Que no se hayan colado espacios ni comillas alrededor.
+- Que no la hayas borrado en <https://console.anthropic.com/settings/keys>.
+- Si el error habla de **crédito**, añade saldo en
+  <https://console.anthropic.com/settings/billing>: la clave es válida pero la
+  cuenta está a cero.
+</details>
+
+<details>
+<summary><b>Quiero saber cuánto estoy gastando</b></summary>
+
+El panel **NÚCLEO IA**, abajo a la izquierda, lleva la cuenta de la sesión:
+consultas, tokens y dólares estimados. Pasa el ratón por encima para ver el
+desglose.
+
+Es una estimación con precios de lista; la factura de verdad está en
+<https://console.anthropic.com/settings/usage>. Para gastar menos: usa
+`claude-haiku-4-5` (tres veces más barato), baja «Longitud máxima» en los
+ajustes, o cambia a Ollama, que es gratis.
+</details>
+
+<details>
+<summary><b>Quiero usarlo sin internet o sin pagar</b></summary>
+
+Pulsa **Ctrl+,** → pestaña *Núcleo IA* → **Cerebro: Modelo local con Ollama**.
+El cambio es inmediato. Necesitas Ollama instalado y un modelo descargado
+(ver el [Paso 5](#paso-5--alternativa-gratis-ollama-en-local)).
+
+Los comandos del sistema funcionan igual con los dos cerebros, y sin conexión.
+</details>
 
 <details>
 <summary><b>«No detecto Ollama en marcha»</b></summary>
@@ -616,7 +716,7 @@ rejilla animada y el giro del reactor, y el consumo baja bastante.
 
 ## 7. Las pruebas
 
-El proyecto trae 359 pruebas automáticas. Si tocas el código, ejecútalas
+El proyecto trae 414 pruebas automáticas. Si tocas el código, ejecútalas
 antes de dar nada por bueno:
 
 ```bat

@@ -91,9 +91,27 @@ class Theme:
             background-color: {self.rgba(a, 0.15)};
             border: none;
             width: 16px;
+            subcontrol-origin: border;
         }}
+        QSpinBox::up-button {{ subcontrol-position: top right; }}
+        QSpinBox::down-button {{ subcontrol-position: bottom right; }}
         QSpinBox::up-button:hover, QSpinBox::down-button:hover {{
             background-color: {self.rgba(a, 0.35)};
+        }}
+        /* Sin flechas dibujadas se ve un cuadrado negro: se pintan con bordes. */
+        QSpinBox::up-arrow {{
+            image: none;
+            border-left: 3px solid transparent;
+            border-right: 3px solid transparent;
+            border-bottom: 4px solid {a};
+            width: 0px; height: 0px;
+        }}
+        QSpinBox::down-arrow {{
+            image: none;
+            border-left: 3px solid transparent;
+            border-right: 3px solid transparent;
+            border-top: 4px solid {a};
+            width: 0px; height: 0px;
         }}
 
         QCheckBox {{

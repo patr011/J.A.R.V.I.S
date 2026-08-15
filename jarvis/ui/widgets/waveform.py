@@ -22,7 +22,7 @@ class Waveform(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setFixedHeight(46)
+        self.setFixedHeight(34)
         self._levels = [0.06] * self.BARS
         self._targets = [0.06] * self.BARS
         self._phase = 0.0
