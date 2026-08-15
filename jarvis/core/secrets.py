@@ -39,8 +39,12 @@ def parse_env_file(texto: str) -> dict[str, str]:
     entre comillas simples o dobles.
     """
     variables: dict[str, str] = {}
+    # El Bloc de notas y PowerShell suelen colar una marca invisible (BOM) al
+    # principio del archivo. Sin quitarla, la primera variable pasaria a
+    # llamarse "﻿ANTHROPIC_API_KEY" y la clave no se encontraria nunca.
+    texto = texto.lstrip("﻿")
     for linea in texto.splitlines():
-        linea = linea.strip()
+        linea = linea.strip().lstrip("﻿")
         if not linea or linea.startswith("#"):
             continue
         if linea.lower().startswith("export "):

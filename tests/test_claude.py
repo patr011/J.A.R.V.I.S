@@ -327,3 +327,22 @@ def test_el_resumen_de_gasto_se_lee_bien(cliente):
     cliente.chat_stream([{"role": "user", "content": "hola"}])
     resumen = cliente.usage.resumen()
     assert "1 consulta" in resumen and "$" in resumen
+
+
+def test_el_bom_del_bloc_de_notas_no_rompe_la_clave():
+    """Windows cuela una marca invisible al principio del archivo.
+
+    Sin quitarla, la variable pasaba a llamarse «﻿ANTHROPIC_API_KEY»
+    y el asistente juraba que no había ninguna clave configurada.
+    """
+    from jarvis.core.secrets import parse_env_file
+
+    variables = parse_env_file("﻿ANTHROPIC_API_KEY=sk-ant-api03-prueba\n")
+    assert variables["ANTHROPIC_API_KEY"] == "sk-ant-api03-prueba"
+
+
+def test_los_finales_de_linea_de_windows_tampoco_estorban():
+    from jarvis.core.secrets import parse_env_file
+
+    variables = parse_env_file("ANTHROPIC_API_KEY=sk-ant-api03-prueba\r\n")
+    assert variables["ANTHROPIC_API_KEY"] == "sk-ant-api03-prueba"
