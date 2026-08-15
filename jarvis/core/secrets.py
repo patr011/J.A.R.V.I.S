@@ -24,6 +24,7 @@ from ..logging_setup import get_logger
 log = get_logger("secretos")
 
 API_KEY_VAR = "ANTHROPIC_API_KEY"
+ELEVENLABS_KEY_VAR = "ELEVENLABS_API_KEY"
 
 # El .env del proyecto se lee primero; el de ~/.jarvis es el recomendado.
 ENV_FILES = (
@@ -80,17 +81,31 @@ def load_env_files() -> list[Path]:
     return cargados
 
 
-def get_api_key() -> str:
-    """La clave de API, o cadena vacía si no está configurada."""
-    clave = os.environ.get(API_KEY_VAR, "").strip()
+def _leer_clave(variable: str) -> str:
+    """Busca una clave en el entorno y, si no está, en los .env."""
+    clave = os.environ.get(variable, "").strip()
     if not clave:
         load_env_files()
-        clave = os.environ.get(API_KEY_VAR, "").strip()
+        clave = os.environ.get(variable, "").strip()
     return clave
+
+
+def get_api_key() -> str:
+    """La clave de Claude, o cadena vacía si no está configurada."""
+    return _leer_clave(API_KEY_VAR)
 
 
 def has_api_key() -> bool:
     return bool(get_api_key())
+
+
+def get_elevenlabs_key() -> str:
+    """La clave de ElevenLabs (voz), o cadena vacía. Es opcional."""
+    return _leer_clave(ELEVENLABS_KEY_VAR)
+
+
+def has_elevenlabs_key() -> bool:
+    return bool(get_elevenlabs_key())
 
 
 def mask_api_key(clave: str = "") -> str:

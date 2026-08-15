@@ -174,6 +174,8 @@ class StartupCheckWorker(QThread):
             "mic_checked": self.stt is not None,
             "mic_ok": False,
             "mic_message": "",
+            "volume_ok": True,
+            "volume_error": "",
         }
         try:
             info["ollama_running"] = self.llm.is_running()
@@ -215,5 +217,18 @@ class StartupCheckWorker(QThread):
                 info["mic_message"] = message
             except Exception as exc:
                 info["mic_message"] = str(exc)
+
+        # El volumen se comprueba aqui, en un hilo aparte, y no en la ventana:
+        # abrir el mezclador de Windows la primera vez tarda un poco. Ademas,
+        # cada hilo tiene su propio enlace, asi que este intento no le sirve a
+        # la ventana; lo que se busca es saber SI se puede, para poder
+        # explicarlo en vez de dejar un «n/d» sin motivo.
+        from ..commands.system import volume
+        try:
+            info["volume_ok"] = volume.get_level() is not None
+            info["volume_error"] = volume.error
+        except Exception as exc:                        # pragma: no cover
+            info["volume_ok"] = False
+            info["volume_error"] = str(exc)
 
         self.report.emit(info)

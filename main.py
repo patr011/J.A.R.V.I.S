@@ -83,6 +83,7 @@ def check_dependencies(verbose: bool = True) -> bool:
 def run_diagnostics() -> int:
     """Modo --check: revisa dependencias, Ollama, micrófono y hardware."""
     from jarvis.core.ollama_client import OllamaClient, suggest_model
+    from jarvis.core.secrets import get_elevenlabs_key
     from jarvis.core.speech import SpeechToText, TextToSpeech
 
     print(BANNER)
@@ -174,6 +175,37 @@ def run_diagnostics() -> int:
     print("\n--- VOZ ---")
     tts = TextToSpeech()
     print(f"  Texto a voz: {'disponible' if tts.available else tts.error}")
+    print(f"  Motor elegido: {config.get('voice.engine', 'windows')}")
+
+    if str(config.get("voice.engine", "windows")).lower() == "elevenlabs":
+        from jarvis.core.secrets import has_elevenlabs_key, mask_api_key
+        from jarvis.core.tts_elevenlabs import CONSOLA, ElevenLabsTTS
+
+        if not has_elevenlabs_key():
+            print("  [FALLO] No hay clave de ElevenLabs.")
+            print(f"          Sácala en {CONSOLA} y guárdala con:")
+            print("            python poner_clave.py voz")
+        else:
+            print(f"  [OK]    Clave de ElevenLabs: {mask_api_key(get_elevenlabs_key())}")
+            cliente = ElevenLabsTTS()
+            listo, motivo = cliente.esta_listo()
+            print(f"  {'[OK]   ' if listo else '[FALLO]'} {motivo}")
+            if listo:
+                voces = cliente.list_voices()
+                if voces:
+                    print(f"  Voces en tu cuenta: {len(voces)}")
+                    elegida = next((v for v in voces if v.voice_id == cliente.voice_id), None)
+                    print(f"  Voz elegida: {elegida.nombre if elegida else cliente.voice_id}")
+                else:
+                    print(f"  [AVISO] No he podido leer tus voces. {cliente.error}")
+                cliente.actualizar_cupo()
+                if cliente.gasto.cupo_total:
+                    queda = cliente.gasto.cupo_total - cliente.gasto.cupo_usado
+                    print(f"  Cupo del mes: quedan {queda} de "
+                          f"{cliente.gasto.cupo_total} caracteres")
+        print(f"  Si ElevenLabs falla, hablará la voz de Windows: "
+              f"{'disponible' if tts.available else 'tampoco disponible'}")
+
     stt = SpeechToText()
     mic_ok, mic_msg = stt.check_microphone()
     print(f"  Micrófono: {mic_msg}")

@@ -9,8 +9,9 @@ from __future__ import annotations
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QFormLayout, QFrame, QHBoxLayout, QLabel,
-    QLineEdit, QPushButton, QSlider, QSpinBox, QTabWidget, QVBoxLayout, QWidget,
+    QApplication, QCheckBox, QComboBox, QDialog, QFormLayout, QFrame,
+    QHBoxLayout, QLabel, QLineEdit, QPushButton, QSlider, QSpinBox, QTabWidget,
+    QVBoxLayout, QWidget,
 )
 
 from ..config import CONFIG_FILE, config
@@ -22,6 +23,14 @@ MODELOS_CLAUDE = {
     "claude-sonnet-5": ("Claude Sonnet 5", "recomendado"),
     "claude-haiku-4-5": ("Claude Haiku 4.5", "el más barato"),
     "claude-opus-5": ("Claude Opus 5", "el más capaz"),
+}
+
+# Modelos de voz de ElevenLabs. El rapido va primero: en un asistente
+# importa mas contestar pronto que la ultima decima de calidad.
+MODELOS_ELEVEN = {
+    "eleven_flash_v2_5": "Flash v2.5 — el más rápido (recomendado)",
+    "eleven_turbo_v2_5": "Turbo v2.5 — rápido y algo mejor",
+    "eleven_multilingual_v2": "Multilingual v2 — el que mejor suena, más lento",
 }
 
 COLORES = {
@@ -261,10 +270,10 @@ class SettingsDialog(QDialog):
                 "Las respuestas las genera un modelo en su propio equipo. "
                 "Gratis y sin internet, pero de menor calidad y más lento.")
 
-    def _mostrar_fila(self, widget, visible: bool) -> None:
+    def _mostrar_fila(self, widget, visible: bool, formulario=None) -> None:
         """Oculta un campo y su etiqueta a la vez."""
         widget.setVisible(visible)
-        etiqueta = self._formulario_ia.labelForField(widget)
+        etiqueta = (formulario or self._formulario_ia).labelForField(widget)
         if etiqueta is not None:
             etiqueta.setVisible(visible)
 
@@ -279,11 +288,26 @@ class SettingsDialog(QDialog):
 
     def _pestaña_voz(self) -> QWidget:
         pagina, form = self._pagina()
+        self._formulario_voz = form
 
         self.voz_activa = QCheckBox("El asistente responde hablando")
         self.voz_activa.setChecked(bool(config.get("voice.tts_enabled", True)))
         form.addRow(self.voz_activa)
 
+        # --- con qué voz habla ---
+        self.motor_voz = QComboBox()
+        self.motor_voz.addItem("Voz de Windows (gratis, sin internet)", "windows")
+        self.motor_voz.addItem("ElevenLabs (suena mucho mejor, de pago)", "elevenlabs")
+        indice = self.motor_voz.findData(str(config.get("voice.engine", "windows")).lower())
+        self.motor_voz.setCurrentIndex(max(0, indice))
+        self.motor_voz.currentIndexChanged.connect(self._cambiar_motor_voz)
+        form.addRow("Motor de voz:", self.motor_voz)
+
+        self.nota_motor = WrapLabel()
+        self.nota_motor.setObjectName("hint")
+        form.addRow(self.nota_motor)
+
+        # --- voz de Windows ---
         self.voz = QComboBox()
         self.voz.addItem("Automática (la del idioma del sistema)", "")
         for voz_id, nombre in self._voces:
@@ -291,7 +315,7 @@ class SettingsDialog(QDialog):
         actual = str(config.get("voice.voice_id", ""))
         indice = self.voz.findData(actual)
         self.voz.setCurrentIndex(max(0, indice))
-        form.addRow("Voz:", self.voz)
+        form.addRow("Voz de Windows:", self.voz)
 
         self.velocidad = QSpinBox()
         self.velocidad.setRange(80, 320)
@@ -299,6 +323,49 @@ class SettingsDialog(QDialog):
         self.velocidad.setValue(int(config.get("voice.rate", 180)))
         form.addRow("Velocidad al hablar:", self.velocidad)
 
+        # --- ElevenLabs ---
+        self.voz_eleven = QComboBox()
+        guardada = str(config.get("voice.elevenlabs_voice", ""))
+        if guardada:
+            self.voz_eleven.addItem(f"(la que tenías: {guardada[:8]}…)", guardada)
+        else:
+            self.voz_eleven.addItem("— ninguna elegida —", "")
+        fila_voces = QHBoxLayout()
+        fila_voces.addWidget(self.voz_eleven, 1)
+        self.boton_voces = QPushButton("Buscar mis voces")
+        self.boton_voces.setToolTip(
+            "Consulta a ElevenLabs qué voces hay en tu cuenta.\n"
+            "Tarda un segundo.")
+        self.boton_voces.clicked.connect(self._cargar_voces_eleven)
+        fila_voces.addWidget(self.boton_voces)
+        self.caja_voces_eleven = QWidget()
+        self.caja_voces_eleven.setLayout(fila_voces)
+        fila_voces.setContentsMargins(0, 0, 0, 0)
+        form.addRow("Voz de ElevenLabs:", self.caja_voces_eleven)
+
+        self.modelo_eleven = QComboBox()
+        for clave, etiqueta in MODELOS_ELEVEN.items():
+            self.modelo_eleven.addItem(etiqueta, clave)
+        indice = self.modelo_eleven.findData(
+            str(config.get("voice.elevenlabs_model", "eleven_flash_v2_5")))
+        self.modelo_eleven.setCurrentIndex(max(0, indice))
+        form.addRow("Modelo de voz:", self.modelo_eleven)
+
+        self.estabilidad = QSlider(Qt.Orientation.Horizontal)
+        self.estabilidad.setRange(0, 100)
+        self.estabilidad.setValue(int(float(config.get("voice.elevenlabs_stability", 0.5)) * 100))
+        self.etiqueta_estabilidad = QLabel()
+        self.estabilidad.valueChanged.connect(self._actualizar_estabilidad)
+        self._actualizar_estabilidad(self.estabilidad.value())
+        fila = QHBoxLayout()
+        fila.addWidget(self.estabilidad, 1)
+        fila.addWidget(self.etiqueta_estabilidad)
+        fila.setContentsMargins(0, 0, 0, 0)
+        self.caja_estabilidad = QWidget()
+        self.caja_estabilidad.setLayout(fila)
+        form.addRow("Estabilidad:", self.caja_estabilidad)
+
+        # --- común ---
         self.palabra_clave = QLineEdit(str(config.get("voice.wake_word", "jarvis")))
         self.palabra_clave.setObjectName("input")
         form.addRow("Palabra clave:", self.palabra_clave)
@@ -314,7 +381,81 @@ class SettingsDialog(QDialog):
         self.idioma_voz.setCurrentIndex(max(0, indice))
         form.addRow("Idioma del micrófono:", self.idioma_voz)
 
+        self._cambiar_motor_voz()
         return pagina
+
+    def _actualizar_estabilidad(self, valor: int) -> None:
+        if valor <= 30:
+            texto = "más expresiva"
+        elif valor <= 70:
+            texto = "equilibrada"
+        else:
+            texto = "más monótona pero constante"
+        self.etiqueta_estabilidad.setText(f"{valor / 100:.2f}  ({texto})")
+
+    def _cambiar_motor_voz(self) -> None:
+        """Enseña solo lo que hace falta para el motor de voz elegido."""
+        from ..core.secrets import has_elevenlabs_key
+
+        es_eleven = self.motor_voz.currentData() == "elevenlabs"
+
+        for widget in (self.voz, self.velocidad):
+            self._mostrar_fila(widget, not es_eleven, self._formulario_voz)
+        for widget in (self.caja_voces_eleven, self.modelo_eleven, self.caja_estabilidad):
+            self._mostrar_fila(widget, es_eleven, self._formulario_voz)
+
+        if not es_eleven:
+            self.nota_motor.setText(
+                "La voz que trae Windows. Gratis, instantánea y funciona sin "
+                "internet, aunque suena a robot.")
+            return
+
+        if has_elevenlabs_key():
+            self.nota_motor.setText(
+                "Voces de ElevenLabs. Se paga por caracteres hablados y "
+                "necesita internet; si falla, se usa la de Windows.")
+        else:
+            self.nota_motor.setText(
+                "⚠ No hay clave de ElevenLabs. Sácala en "
+                "https://elevenlabs.io/app/settings/api-keys y guárdala con "
+                "poner_clave.bat. Mientras tanto seguirá hablando la voz de "
+                "Windows.")
+
+    def _cargar_voces_eleven(self) -> None:
+        """Pide a ElevenLabs la lista de voces de la cuenta."""
+        from ..core.secrets import has_elevenlabs_key
+        from ..core.tts_elevenlabs import ElevenLabsTTS
+
+        if not has_elevenlabs_key():
+            self.nota_motor.setText(
+                "⚠ Primero hace falta la clave: guárdala con poner_clave.bat.")
+            return
+
+        self.boton_voces.setEnabled(False)
+        self.boton_voces.setText("Buscando…")
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            cliente = ElevenLabsTTS()
+            voces = cliente.list_voices()
+            error = cliente.error
+        finally:
+            QApplication.restoreOverrideCursor()
+            self.boton_voces.setEnabled(True)
+            self.boton_voces.setText("Buscar mis voces")
+
+        if not voces:
+            self.nota_motor.setText(
+                f"No he podido traer las voces. {error}" if error else
+                "Tu cuenta de ElevenLabs no tiene ninguna voz.")
+            return
+
+        actual = self.voz_eleven.currentData() or str(config.get("voice.elevenlabs_voice", ""))
+        self.voz_eleven.clear()
+        for voz in voces:
+            self.voz_eleven.addItem(voz.etiqueta(), voz.voice_id)
+        indice = self.voz_eleven.findData(actual)
+        self.voz_eleven.setCurrentIndex(max(0, indice))
+        self.nota_motor.setText(f"{len(voces)} voces encontradas en tu cuenta.")
 
     def _pestaña_aspecto(self) -> QWidget:
         pagina, form = self._pagina()
@@ -389,8 +530,12 @@ class SettingsDialog(QDialog):
         config.set("memory.max_turns", self.turnos.value())
 
         config.set("voice.tts_enabled", self.voz_activa.isChecked())
+        config.set("voice.engine", self.motor_voz.currentData())
         config.set("voice.voice_id", self.voz.currentData() or "")
         config.set("voice.rate", self.velocidad.value())
+        config.set("voice.elevenlabs_voice", self.voz_eleven.currentData() or "")
+        config.set("voice.elevenlabs_model", self.modelo_eleven.currentData())
+        config.set("voice.elevenlabs_stability", self.estabilidad.value() / 100)
         config.set("voice.wake_word", self.palabra_clave.text().strip() or "jarvis")
         config.set("voice.stt_language", self.idioma_voz.currentData())
 

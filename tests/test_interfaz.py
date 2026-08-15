@@ -243,3 +243,14 @@ def test_el_panel_lateral_nunca_recorta_texto(ventana, alto):
 def test_la_ventana_no_puede_hacerse_tan_pequeña_que_recorte(ventana):
     """El minimo de la ventana tiene que dar de si para la columna entera."""
     assert ventana.minimumHeight() >= 700
+
+
+def test_cambiar_de_motor_de_voz_en_caliente(ventana):
+    """Cambiar la voz en Ajustes no puede dejar la ventana muda."""
+    antigua = ventana.tts
+    ventana._rehacer_voz()
+
+    assert ventana.tts is not antigua
+    assert "Voz:" in ventana.voice_label.text()
+    # El motor viejo tiene que quedar apagado, no hablando por su cuenta.
+    assert not antigua.is_busy

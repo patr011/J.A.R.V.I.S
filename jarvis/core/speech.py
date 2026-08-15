@@ -67,10 +67,25 @@ def clean_for_speech(text: str, max_chars: int = 600) -> str:
 
 
 class TextToSpeech:
-    """Cola de frases habladas atendida por un unico hilo."""
+    """Cola de frases habladas atendida por un unico hilo.
+
+    Puede hablar de dos maneras:
+
+        windows     -> pyttsx3 / SAPI5. Gratis, instantaneo, sin internet.
+        elevenlabs  -> voces de ElevenLabs. Suenan mucho mejor, pero cuestan
+                       dinero y dependen de la conexion.
+
+    Con ElevenLabs, cualquier fallo (sin internet, sin cupo, clave caducada)
+    hace que esa frase y las siguientes las diga la voz de Windows. Preferible
+    a que el asistente se quede mudo justo cuando falla la red.
+    """
 
     def __init__(self) -> None:
-        self.available = TTS_AVAILABLE
+        self._eleven = None
+        self.eleven_error = ""
+        self.engine_name = self._preparar_motor()
+
+        self.available = TTS_AVAILABLE or self.engine_name == "elevenlabs"
         self.enabled = bool(config.get("voice.tts_enabled", True)) and self.available
         self._queue: queue.Queue[str | None] = queue.Queue()
         self._engine = None
@@ -87,6 +102,44 @@ class TextToSpeech:
             self._thread = threading.Thread(target=self._worker, name="jarvis-tts", daemon=True)
             self._thread.start()
 
+    def _preparar_motor(self) -> str:
+        """Decide con qué se va a hablar. Devuelve el motor que se usará.
+
+        Si se ha pedido ElevenLabs pero no está en condiciones, se avisa y se
+        vuelve a la voz de Windows en vez de arrancar roto.
+        """
+        elegido = str(config.get("voice.engine", "windows")).lower()
+        if elegido != "elevenlabs":
+            return "windows"
+
+        try:
+            from .tts_elevenlabs import ElevenLabsTTS
+        except ImportError as exc:                      # pragma: no cover
+            self.eleven_error = f"No se puede usar ElevenLabs: {exc}"
+            return "windows"
+
+        cliente = ElevenLabsTTS()
+        listo, motivo = cliente.esta_listo()
+        if not listo:
+            self.eleven_error = motivo
+            log.warning("ElevenLabs no disponible: %s", motivo.splitlines()[0])
+            return "windows"
+
+        self._eleven = cliente
+        return "elevenlabs"
+
+    @property
+    def usando_elevenlabs(self) -> bool:
+        return self.engine_name == "elevenlabs" and self._eleven is not None
+
+    def describe_engine(self) -> str:
+        """Una línea para el panel: con qué voz se está hablando."""
+        if self.usando_elevenlabs:
+            return "Voz: ElevenLabs"
+        if self.eleven_error:
+            return "Voz: Windows (ElevenLabs no disponible)"
+        return "Voz: Windows"
+
     # -- API publica ----------------------------------------------------
 
     @property
@@ -95,7 +148,15 @@ class TextToSpeech:
 
     @property
     def is_busy(self) -> bool:
-        """Hablando ahora mismo o con frases todavia en la cola."""
+        """Hablando ahora mismo o con frases todavia en la cola.
+
+        Si el hilo de voz no esta vivo, no puede hablar nadie por mucho que
+        quede algo en la cola. Contestar que si dejaria a la escucha continua
+        esperando para siempre un silencio que no va a llegar: no escucha
+        mientras el asistente habla.
+        """
+        if self._thread is None or not self._thread.is_alive():
+            return False
         return self._speaking.is_set() or not self._queue.empty()
 
     def say(self, text: str) -> None:
@@ -119,6 +180,8 @@ class TextToSpeech:
                 self._engine.stop()
             except Exception:
                 pass
+        if self._eleven is not None:
+            self._eleven.stop()
 
     def set_enabled(self, value: bool) -> bool:
         self.enabled = bool(value) and self.available
@@ -129,7 +192,8 @@ class TextToSpeech:
         return self.enabled
 
     def list_voices(self) -> list[tuple[str, str]]:
-        if not self.available:
+        """Las voces de Windows instaladas en el equipo."""
+        if not TTS_AVAILABLE:
             return []
         try:
             engine = pyttsx3.init()
@@ -138,6 +202,21 @@ class TextToSpeech:
             return voices
         except Exception:
             return []
+
+    def list_elevenlabs_voices(self) -> list[tuple[str, str]]:
+        """Las voces de la cuenta de ElevenLabs, si hay clave.
+
+        Se consulta a la API, así que puede tardar un segundo: llámalo desde
+        un hilo, nunca desde la interfaz.
+        """
+        try:
+            from .tts_elevenlabs import ElevenLabsTTS
+        except ImportError:                             # pragma: no cover
+            return []
+        cliente = self._eleven or ElevenLabsTTS()
+        if not cliente.hay_clave:
+            return []
+        return [(v.voice_id, v.etiqueta()) for v in cliente.list_voices()]
 
     def shutdown(self) -> None:
         self._stop_flag.set()
@@ -149,6 +228,8 @@ class TextToSpeech:
     # -- hilo interno ---------------------------------------------------
 
     def _init_engine(self) -> bool:
+        if not TTS_AVAILABLE:
+            return False
         try:
             self._engine = pyttsx3.init()
             self._engine.setProperty("rate", config.get("voice.rate", 180))
@@ -158,8 +239,11 @@ class TextToSpeech:
         except Exception as exc:                     # pragma: no cover
             self.error = f"No se pudo iniciar la voz: {exc}"
             log.error("No se pudo iniciar el motor de voz", exc_info=True)
-            self.available = False
-            self.enabled = False
+            # Con ElevenLabs hablando, que falle la voz de Windows no deja
+            # mudo al asistente: solo se queda sin plan B.
+            if not self.usando_elevenlabs:
+                self.available = False
+                self.enabled = False
             return False
 
     def _select_voice(self) -> None:
@@ -201,7 +285,9 @@ class TextToSpeech:
             pass
 
         try:
-            if not self._init_engine():
+            # Con ElevenLabs, pyttsx3 solo hace falta como plan B: que no se
+            # pueda iniciar no es motivo para no arrancar.
+            if not self._init_engine() and not self.usando_elevenlabs:
                 return
             self._speak_loop()
         finally:
@@ -211,6 +297,33 @@ class TextToSpeech:
                     comtypes.CoUninitialize()
                 except Exception:
                     pass
+
+    def _decir_con_elevenlabs(self, texto: str) -> bool:
+        """Intenta decir la frase con ElevenLabs.
+
+        Devuelve True si lo ha conseguido. Si falla, apunta el motivo y se
+        pasa a la voz de Windows para el resto de la sesión: reintentar en
+        cada frase solo conseguiría que el asistente tardase diez segundos
+        en contestar cada vez que se cae la conexión.
+        """
+        from .tts_elevenlabs import ElevenLabsError
+
+        try:
+            self._eleven.speak(texto)
+            return True
+        except ElevenLabsError as exc:
+            self.eleven_error = str(exc)
+            self.error = f"ElevenLabs ha fallado, sigo con la voz de Windows.\n{exc}"
+            log.warning("ElevenLabs ha fallado: %s", exc)
+        except Exception as exc:                        # pragma: no cover
+            self.eleven_error = f"{type(exc).__name__}: {exc}"
+            self.error = f"ElevenLabs ha fallado, sigo con la voz de Windows.\n{exc}"
+            log.error("Fallo inesperado en ElevenLabs", exc_info=True)
+
+        self.engine_name = "windows"
+        if self._engine is None and TTS_AVAILABLE:
+            self._init_engine()
+        return False
 
     def _speak_loop(self) -> None:
         while not self._stop_flag.is_set():
@@ -222,6 +335,11 @@ class TextToSpeech:
                 self._speaking.set()
                 if self.on_state_change:
                     self.on_state_change(True)
+                if self.usando_elevenlabs and self._decir_con_elevenlabs(item):
+                    continue
+                if self._engine is None:
+                    # Sin voz de Windows y ElevenLabs caído: no hay plan C.
+                    continue
                 self._engine.say(item)
                 self._engine.runAndWait()
             except RuntimeError:

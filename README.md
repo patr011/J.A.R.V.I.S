@@ -112,7 +112,8 @@ J.A.R.V.I.S/
 │   │   ├── secrets.py       ← lee la clave del .env (nunca del código)
 │   │   ├── prompts.py       ← el prompt de sistema de cada cerebro
 │   │   ├── memory.py        ← memoria de la conversación y notas permanentes
-│   │   └── speech.py        ← voz: hablar, oír y la palabra clave
+│   │   ├── speech.py        ← voz: hablar, oír y la palabra clave
+│   │   └── tts_elevenlabs.py ← voz de ElevenLabs (opcional, de pago)
 │   │
 │   ├── commands/            ← todo lo que puede hacer en tu equipo
 │   │   ├── registry.py      ← interpreta la frase y llama al comando correcto
@@ -139,7 +140,7 @@ J.A.R.V.I.S/
 │           ├── hud.py         ← rejilla de fondo y barras de estado
 │           └── waveform.py    ← la onda de audio animada
 │
-└── tests/                   ← 432 pruebas automáticas
+└── tests/                   ← 478 pruebas automáticas
 ```
 
 **La idea de la separación**: `commands/` no sabe nada de la interfaz, `ui/`
@@ -316,6 +317,47 @@ pero es gratis y nada sale de tu ordenador.
 El cambio es inmediato: no hace falta reiniciar. Puedes ir y volver entre los
 dos cerebros cuando quieras — por ejemplo, Claude en el día a día y Ollama
 cuando estés sin conexión.
+
+### Paso 5 bis — Voz de ElevenLabs (opcional)
+
+De serie, el asistente habla con la voz que trae Windows. Es gratis,
+instantánea y funciona sin internet, pero suena a robot de centralita.
+
+Si quieres que suene como una persona, puedes usar [ElevenLabs]:
+
+1. Crea una cuenta en <https://elevenlabs.io> y saca tu clave en
+   *Settings → API Keys*. Hay un plan gratuito con unos 10.000 caracteres al
+   mes, que da para bastantes respuestas cortas.
+2. Guárdala:
+
+   ```bat
+   python poner_clave.py voz
+   ```
+
+   (o doble clic en `poner_clave.bat` y eliges la opción 2)
+
+3. En el asistente: **Ctrl+,** → pestaña *Voz* → **Motor de voz: ElevenLabs**.
+4. Pulsa **Buscar mis voces**, elige la que te guste y guarda.
+
+[ElevenLabs]: https://elevenlabs.io
+
+**Lo que conviene saber antes de activarlo:**
+
+- **Se paga por caracteres hablados**, no por preguntas. Una respuesta de tres
+  líneas son unos 200 caracteres.
+- **Necesita internet.** Tarda unas décimas más en empezar a hablar, porque el
+  audio viene de sus servidores. Se reproduce según llega, no al terminar.
+- **Si falla, no te quedas sin voz.** Sin conexión, sin cupo o con la clave
+  caducada, esa frase y las siguientes las dice la voz de Windows, y el
+  asistente te explica en el panel por qué ha cambiado.
+
+Sobre los modelos: **Flash v2.5** viene elegido de fábrica porque es el que
+antes empieza a hablar, que en un asistente importa más que la última décima
+de calidad. Si prefieres que suene mejor y no te importa esperar un poco más,
+cambia a *Multilingual v2* en esa misma pestaña.
+
+La voz no necesita ninguna librería nueva: usa las que ya tienes instaladas
+para el micrófono.
 
 ### Paso 6 — Arrancar el programa por primera vez
 
@@ -509,13 +551,17 @@ Guarda el archivo y reinicia el asistente para que se apliquen los cambios.
 <details>
 <summary><b>«No encuentro la clave de la API de Claude»</b></summary>
 
-El asistente busca la clave en tres sitios, por este orden: la variable de
-entorno `ANTHROPIC_API_KEY`, el `.env` de la carpeta del proyecto y el `.env`
-de `C:\Users\TU_USUARIO\.jarvis\`.
+Lo más rápido es volver a guardarla con `python poner_clave.py claude`, que la
+escribe en el sitio correcto y con el formato correcto.
 
-Lo que más falla es el Bloc de notas: al guardar crea `.env.txt` en vez de
-`.env`. Comprueba el nombre real activando *Ver → Extensiones de nombre de
-archivo* en el Explorador. Para verlo desde una terminal:
+El asistente la busca en tres sitios, por este orden: la variable de entorno
+`ANTHROPIC_API_KEY`, el `.env` de la carpeta del proyecto y el `.env` de
+`C:\Users\TU_USUARIO\.jarvis\`.
+
+Lo que más falla al hacerlo a mano es el Bloc de notas: al guardar crea
+`.env.txt` en vez de `.env`. Comprueba el nombre real activando *Ver →
+Extensiones de nombre de archivo* en el Explorador. Para verlo desde una
+terminal:
 
 ```bat
 dir /a "%USERPROFILE%\.jarvis"
@@ -728,9 +774,51 @@ rejilla animada y el giro del reactor, y el consumo baja bastante.
 
 ---
 
+<details>
+<summary><b>El volumen sale como «n/d» en el panel</b></summary>
+
+Subirlo, bajarlo y silenciarlo sigue funcionando (van por las teclas
+multimedia); lo único que se pierde es ver el número.
+
+Para saber por qué, pasa el ratón por encima de la barra o ejecuta
+`python main.py --check` y mira la sección *CONTROL DEL SISTEMA*. Las causas
+habituales:
+
+- **Falta pycaw**: `pip install pycaw comtypes`.
+- **No hay salida de audio activa** (equipo sin altavoces, o todo
+  desconectado). Conecta unos auriculares y reinicia el asistente.
+- **Has cambiado de altavoces con el asistente abierto**. Se rehace solo en el
+  siguiente refresco; si no, reinícialo.
+
+Si en el diagnóstico aparece un error de COM, tienes el asistente
+desactualizado: `git pull` lo arregla.
+</details>
+
+<details>
+<summary><b>Sigue hablando la voz de Windows aunque he elegido ElevenLabs</b></summary>
+
+Es a propósito: cuando ElevenLabs no puede hablar, habla Windows en su lugar
+en vez de dejarte sin voz. El motivo aparece en el panel al arrancar y en
+`python main.py --check`, sección *VOZ*. Suele ser:
+
+- **No hay clave**: `python poner_clave.py voz`.
+- **No has elegido voz**: Ctrl+, → *Voz* → **Buscar mis voces**.
+- **Se acabó el cupo del mes** de tu cuenta de ElevenLabs.
+- **Falta PyAudio**, que es quien reproduce el audio: `pip install pyaudio`.
+</details>
+
+<details>
+<summary><b>La voz de ElevenLabs tarda en arrancar o se corta</b></summary>
+
+El audio viene por internet, así que una conexión lenta se nota. Prueba con el
+modelo **Flash v2.5** (Ctrl+, → *Voz* → *Modelo de voz*), que es el más
+rápido. Si se corta a media frase, casi siempre es la conexión: el asistente
+lo apunta en `jarvis.log` y pasa a la voz de Windows.
+</details>
+
 ## 7. Las pruebas
 
-El proyecto trae 432 pruebas automáticas. Si tocas el código, ejecútalas
+El proyecto trae 478 pruebas automáticas. Si tocas el código, ejecútalas
 antes de dar nada por bueno:
 
 ```bat

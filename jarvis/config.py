@@ -71,9 +71,18 @@ DEFAULTS: dict[str, Any] = {
     # ---- Voz ----
     "voice": {
         "tts_enabled": True,
+        "engine": "windows",         # "windows" (gratis) o "elevenlabs" (de pago)
         "rate": 180,                 # palabras por minuto
         "volume": 1.0,               # 0.0 - 1.0
         "voice_id": "",              # vacio = voz del sistema en tu idioma
+
+        # ---- ElevenLabs (opcional) ----
+        # La clave NO va aqui: va en ELEVENLABS_API_KEY, como la de Claude.
+        "elevenlabs_voice": "",      # id de la voz elegida en tu cuenta
+        "elevenlabs_model": "eleven_flash_v2_5",
+        "elevenlabs_stability": 0.5,
+        "elevenlabs_similarity": 0.75,
+        "elevenlabs_speed": 1.0,
         "stt_enabled": True,
         "stt_language": "es-ES",
         "energy_threshold": 300,

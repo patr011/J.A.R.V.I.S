@@ -11,6 +11,7 @@ from __future__ import annotations
 import ctypes
 import subprocess
 import sys
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -40,48 +41,94 @@ class VolumeController:
     VK_VOLUME_UP = 0xAF
 
     def __init__(self) -> None:
-        self._endpoint = None
+        # Un objeto COM pertenece al hilo que lo creo: usarlo desde otro hilo
+        # falla. Y aqui se usa desde varios (la ventana lo lee cada dos
+        # segundos, los comandos lo cambian desde un hilo de trabajo). Por eso
+        # cada hilo se guarda el suyo, en vez de compartir uno global: era el
+        # motivo de que el panel enseñara «n/d» con pycaw bien instalado.
+        self._local = threading.local()
         self.backend = "teclas multimedia"
         self.error = ""
-        if IS_WINDOWS:
-            self._init_pycaw()
-        else:
+        if not IS_WINDOWS:
             self.error = "el control de volumen solo funciona en Windows"
+            return
+        self._get_endpoint()        # un primer intento, para saber si va
 
-    def _init_pycaw(self) -> None:
-        """Conecta con el mezclador de Windows.
+    def _get_endpoint(self):
+        """El mezclador de Windows visto desde ESTE hilo.
 
-        Si algo falla se guarda el motivo en `self.error` en vez de callarlo:
-        sin eso, el panel se limita a poner «n/d» y no hay forma de saber si
+        Devuelve None si no se puede. El motivo queda en `self.error`: sin
+        eso, el panel se limita a poner «n/d» y no hay forma de saber si
         falta la libreria, si el equipo no tiene tarjeta de sonido activa o
         si es otra cosa.
         """
-        try:
-            from ctypes import cast, POINTER
-            from comtypes import CLSCTX_ALL
-            from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
-        except ImportError as exc:
-            self.error = f"falta la librería pycaw ({exc}). Instálala con: pip install pycaw comtypes"
-            return
+        if not IS_WINDOWS:
+            return None
+
+        endpoint = getattr(self._local, "endpoint", None)
+        if endpoint is not None:
+            return endpoint
+        # Si ya fallo en este hilo, no se reintenta en cada refresco: seria
+        # un intento fallido cada dos segundos para siempre.
+        if getattr(self._local, "fallido", False):
+            return None
 
         try:
-            devices = AudioUtilities.GetSpeakers()
-            interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-            self._endpoint = cast(interface, POINTER(IAudioEndpointVolume))
-            self.backend = "pycaw"
+            endpoint = self._crear_endpoint()
+        except ImportError as exc:
+            self.error = (f"falta la librería pycaw ({exc}). "
+                          "Instálala con: pip install pycaw comtypes")
+            self._local.fallido = True
+            return None
         except Exception as exc:
-            self._endpoint = None
+            self._local.fallido = True
             self.error = f"{type(exc).__name__}: {exc}"
             log.warning("pycaw no ha podido conectar con el mezclador", exc_info=True)
+            return None
+
+        self._local.endpoint = endpoint
+        self.backend = "pycaw"
+        self.error = ""
+        return endpoint
+
+    def _crear_endpoint(self):
+        """Abre el mezclador. Separado para poder probarlo sin Windows."""
+        from ctypes import cast, POINTER
+        import comtypes
+        from comtypes import CLSCTX_ALL
+
+        try:
+            from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+        except ImportError:
+            # Las versiones nuevas de pycaw reorganizaron los modulos. Con
+            # solo el import de siempre, una instalacion correcta parecia
+            # una libreria ausente.
+            from pycaw.utils import AudioUtilities
+            from pycaw.api.endpointvolume import IAudioEndpointVolume
+
+        # COM hay que inicializarlo EN CADA HILO que lo use. Sin esto, la
+        # llamada falla con «CoInitialize has not been called»: es el mismo
+        # tropiezo que dejaba muda la voz.
+        try:
+            comtypes.CoInitialize()
+        except Exception:
+            pass
+        devices = AudioUtilities.GetSpeakers()
+        interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+        return cast(interface, POINTER(IAudioEndpointVolume))
+
+    @property
+    def _endpoint(self):
+        """Compatibilidad: antes era un atributo, ahora se pide por hilo."""
+        return self._get_endpoint()
 
     def retry(self) -> bool:
         """Vuelve a intentar la conexión (útil si cambias de altavoces)."""
         if not IS_WINDOWS:
             return False
-        self._endpoint = None
+        self._local = threading.local()
         self.error = ""
-        self._init_pycaw()
-        return self._endpoint is not None
+        return self._get_endpoint() is not None
 
     # -- plan B: teclas multimedia --------------------------------------
 
@@ -96,11 +143,17 @@ class VolumeController:
 
     def get_level(self) -> int | None:
         """Volumen actual en 0-100, o None si no se puede leer."""
-        if self._endpoint is None:
+        endpoint = self._get_endpoint()
+        if endpoint is None:
             return None
         try:
-            return int(round(self._endpoint.GetMasterVolumeLevelScalar() * 100))
-        except Exception:
+            return int(round(endpoint.GetMasterVolumeLevelScalar() * 100))
+        except Exception as exc:
+            # Los altavoces pueden desaparecer a media sesion (desconectar
+            # unos auriculares, cambiar de salida). Se tira el enlace viejo
+            # para que el siguiente refresco lo rehaga contra el nuevo.
+            self.error = f"{type(exc).__name__}: {exc}"
+            self._local.endpoint = None
             return None
 
     def set_level(self, percent: int) -> CommandResult:

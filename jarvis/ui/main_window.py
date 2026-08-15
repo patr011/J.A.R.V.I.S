@@ -348,6 +348,15 @@ class JarvisWindow(QWidget):
 
         if not self.tts.available:
             self.chat.add_message("system", f"Voz desactivada: {self.tts.error}")
+        elif self.tts.usando_elevenlabs:
+            self.chat.add_message("system", "Hablando con una voz de ElevenLabs.")
+        elif self.tts.eleven_error:
+            # Se pidió ElevenLabs pero no ha podido ser: mejor decirlo que
+            # dejar que el usuario se pregunte por qué suena a robot.
+            self.chat.add_message(
+                "system",
+                f"No puedo usar ElevenLabs, hablo con la voz de Windows.\n"
+                f"   {self.tts.eleven_error}")
 
         self._check = StartupCheckWorker(self.llm, self.stt, parent=self)
         self._check.report.connect(self._on_startup_report)
@@ -366,6 +375,7 @@ class JarvisWindow(QWidget):
         if info.get("provider") == "claude":
             self._report_claude(info)
             self._report_microphone(info)
+            self._report_volume(info)
             return
 
         # --- Ollama ---
@@ -409,6 +419,26 @@ class JarvisWindow(QWidget):
             config.save()
 
         self._report_microphone(info)
+        self._report_volume(info)
+
+    def _report_volume(self, info: dict) -> None:
+        """Si el volumen no se puede leer, decir por qué.
+
+        Un «n/d» en la barra no explica nada, y hay que pasar el ratón por
+        encima para enterarse. Si de verdad no funciona, mejor decirlo una
+        vez al arrancar.
+        """
+        if info.get("volume_ok", True):
+            return
+        motivo = str(info.get("volume_error") or "").strip()
+        if not motivo or "solo funciona en Windows" in motivo:
+            return
+        self.chat.add_message(
+            "system",
+            "No puedo leer el nivel de volumen, así que la barra se queda en «n/d».\n"
+            f"   Motivo: {motivo}\n"
+            "   Subirlo, bajarlo y silenciarlo sigue funcionando con las teclas "
+            "multimedia; lo único que se pierde es ver el número.")
 
     def _report_claude(self, info: dict) -> None:
         """Estado del núcleo cuando el cerebro es la API de Claude."""
@@ -445,11 +475,14 @@ class JarvisWindow(QWidget):
         if not info.get("mic_checked", True):
             return
         self._mic_ready = bool(info.get("mic_ok"))
+        # Con qué voz habla; interesa saberlo de un vistazo cuando se paga
+        # por ella.
+        habla = "ElevenLabs" if self.tts.usando_elevenlabs else "Windows"
         if self._mic_ready:
-            self.voice_label.setText("Voz: micrófono listo")
+            self.voice_label.setText(f"Voz: {habla} · micrófono listo")
         else:
             mensaje = info.get("mic_message") or "micrófono no disponible"
-            self.voice_label.setText(f"Voz: {mensaje}")
+            self.voice_label.setText(f"Voz: {habla}\nMicrófono: {mensaje}")
             self.mic_button.setEnabled(False)
             self.mic_button.setToolTip(str(mensaje))
 
@@ -793,6 +826,32 @@ class JarvisWindow(QWidget):
         self._set_state("idle")
 
     @pyqtSlot()
+    def _rehacer_voz(self) -> None:
+        """Cambia de motor de voz sin reiniciar el asistente.
+
+        Se levanta uno nuevo y se apaga el viejo, y no al revés: si el nuevo
+        no arranca, al menos el mensaje de aviso se dice en voz alta.
+        """
+        viejo = self.tts
+        viejo.stop()
+        self.tts = TextToSpeech()
+        self.tts.on_state_change = viejo.on_state_change
+        viejo.shutdown()
+
+        if self.tts.usando_elevenlabs:
+            self.chat.add_message("system", "Ahora hablo con una voz de ElevenLabs.")
+        elif self.tts.eleven_error:
+            self.chat.add_message(
+                "system",
+                f"No puedo usar ElevenLabs, sigo con la voz de Windows.\n"
+                f"   {self.tts.eleven_error}")
+        else:
+            self.chat.add_message("system", "Ahora hablo con la voz de Windows.")
+
+        habla = "ElevenLabs" if self.tts.usando_elevenlabs else "Windows"
+        self.voice_label.setText(
+            f"Voz: {habla}" + (" · micrófono listo" if self._mic_ready else ""))
+
     def open_settings(self) -> None:
         """Abre el panel de ajustes y aplica lo que se pueda en caliente."""
         from .settings_dialog import SettingsDialog
@@ -805,6 +864,9 @@ class JarvisWindow(QWidget):
         from ..core.llm import current_provider
 
         proveedor_antes = current_provider()
+        voz_antes = (str(config.get("voice.engine", "windows")),
+                     str(config.get("voice.elevenlabs_voice", "")),
+                     str(config.get("voice.elevenlabs_model", "")))
         dialogo = SettingsDialog(self, modelos=modelos, voces=self.tts.list_voices())
         if not dialogo.exec():
             return
@@ -828,6 +890,15 @@ class JarvisWindow(QWidget):
                 self._comprobar_nucleo()
 
         self.memory.max_turns = int(config.get("memory.max_turns", 40))
+
+        # Cambiar de voz es cambiar de motor entero (otra librería, otro hilo,
+        # otra forma de fallar): se rehace en vez de tocarlo en caliente.
+        voz_ahora = (str(config.get("voice.engine", "windows")),
+                     str(config.get("voice.elevenlabs_voice", "")),
+                     str(config.get("voice.elevenlabs_model", "")))
+        if voz_ahora != voz_antes:
+            self._rehacer_voz()
+
         self.tts.set_enabled(bool(config.get("voice.tts_enabled", True)))
         self.voice_button.setChecked(self.tts.enabled)
 
