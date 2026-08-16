@@ -140,7 +140,7 @@ J.A.R.V.I.S/
 │           ├── hud.py         ← rejilla de fondo y barras de estado
 │           └── waveform.py    ← la onda de audio animada
 │
-└── tests/                   ← 483 pruebas automáticas
+└── tests/                   ← 490 pruebas automáticas
 ```
 
 **La idea de la separación**: `commands/` no sabe nada de la interfaz, `ui/`
@@ -798,6 +798,18 @@ la documentación de internet.
 </details>
 
 <details>
+<summary><b>Dice el saludo y luego ya no habla más</b></summary>
+
+Era un fallo del asistente, arreglado: `git pull` y listo.
+
+pyttsx3 (la voz de Windows) se queda tocado cuando se le corta a media
+frase, y el asistente le corta cada vez que mandas un mensaje nuevo, para que
+no siga hablando de lo anterior. A partir de ahí, todas las frases fallaban en
+silencio. Ahora, si el motor falla, se rehace y la frase se dice igualmente.
+
+</details>
+
+<details>
 <summary><b>Sigue hablando la voz de Windows aunque he elegido ElevenLabs</b></summary>
 
 Es a propósito: cuando ElevenLabs no puede hablar, habla Windows en su lugar
@@ -821,7 +833,7 @@ lo apunta en `jarvis.log` y pasa a la voz de Windows.
 
 ## 7. Las pruebas
 
-El proyecto trae 483 pruebas automáticas. Si tocas el código, ejecútalas
+El proyecto trae 490 pruebas automáticas. Si tocas el código, ejecútalas
 antes de dar nada por bueno:
 
 ```bat

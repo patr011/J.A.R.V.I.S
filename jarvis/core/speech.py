@@ -93,6 +93,9 @@ class TextToSpeech:
         self._speaking = threading.Event()
         self._stop_flag = threading.Event()
         self._failures = 0
+        # Se activa solo si el motor compartido da problemas: entonces se
+        # crea uno nuevo para cada frase, que es mas lento pero no se rompe.
+        self._motor_por_frase = False
         self.error: str = "" if self.available else (
             "pyttsx3 no está instalado (pip install pyttsx3)."
         )
@@ -231,10 +234,7 @@ class TextToSpeech:
         if not TTS_AVAILABLE:
             return False
         try:
-            self._engine = pyttsx3.init()
-            self._engine.setProperty("rate", config.get("voice.rate", 180))
-            self._engine.setProperty("volume", config.get("voice.volume", 1.0))
-            self._select_voice()
+            self._engine = self._crear_motor()
             return True
         except Exception as exc:                     # pragma: no cover
             self.error = f"No se pudo iniciar la voz: {exc}"
@@ -246,19 +246,40 @@ class TextToSpeech:
                 self.enabled = False
             return False
 
-    def _select_voice(self) -> None:
+    def _crear_motor(self):
+        """Un motor de pyttsx3 configurado y listo para hablar."""
+        motor = pyttsx3.init()
+        motor.setProperty("rate", config.get("voice.rate", 180))
+        motor.setProperty("volume", config.get("voice.volume", 1.0))
+        self._select_voice(motor)
+        return motor
+
+    def _desechar_motor(self) -> None:
+        """Suelta el motor actual sin protestar si ya estaba roto."""
+        motor, self._engine = self._engine, None
+        if motor is None:
+            return
+        try:
+            motor.stop()
+        except Exception:
+            pass
+        del motor
+
+    def _select_voice(self, motor=None) -> None:
         """Elige la voz configurada o, si no hay, una en el idioma del usuario."""
-        assert self._engine is not None
+        motor = motor or self._engine
+        if motor is None:
+            return
         wanted_id = config.get("voice.voice_id", "")
         try:
-            voices = self._engine.getProperty("voices")
+            voices = motor.getProperty("voices")
         except Exception:
             return
 
         if wanted_id:
             for v in voices:
                 if v.id == wanted_id:
-                    self._engine.setProperty("voice", v.id)
+                    motor.setProperty("voice", v.id)
                     return
 
         lang = config.get("language", "es")
@@ -268,7 +289,7 @@ class TextToSpeech:
         for v in voices:
             haystack = f"{getattr(v, 'name', '')} {getattr(v, 'id', '')}".lower()
             if any(k in haystack for k in keys):
-                self._engine.setProperty("voice", v.id)
+                motor.setProperty("voice", v.id)
                 return
 
     def _worker(self) -> None:
@@ -325,6 +346,73 @@ class TextToSpeech:
             self._init_engine()
         return False
 
+    def _decir_con_windows(self, texto: str) -> bool:
+        """Dice la frase con la voz de Windows. True si lo ha conseguido.
+
+        Aquí estaba el fallo de «saluda y luego se calla». pyttsx3 se queda
+        tocado cuando se le corta a media frase, y aquí se le corta cada vez
+        que el usuario manda un mensaje nuevo (para que no siga hablando de
+        lo anterior). A partir de ese momento, todas las llamadas fallaban
+        con «run loop already started» y la frase se tiraba a la basura sin
+        decir nada: el asistente se quedaba mudo el resto de la sesión.
+
+        Ahora, si falla, se rehace el motor y se REINTENTA la misma frase. Y
+        si vuelve a fallar, se pasa a crear un motor por frase: es más lento
+        (una décima), pero no hay estado que se pueda corromper.
+        """
+        if self._motor_por_frase:
+            return self._decir_con_motor_nuevo(texto)
+
+        try:
+            if self._engine is None and not self._init_engine():
+                return False
+            self._engine.say(texto)
+            self._engine.runAndWait()
+            return True
+        except Exception as exc:
+            log.warning("La voz de Windows ha fallado (%s); rehaciendo el motor", exc)
+
+        # Segundo intento con un motor recién hecho.
+        self._desechar_motor()
+        try:
+            self._engine = self._crear_motor()
+            self._engine.say(texto)
+            self._engine.runAndWait()
+            return True
+        except Exception as exc:
+            log.warning("Sigue fallando (%s): a partir de ahora, un motor por frase", exc)
+
+        self._desechar_motor()
+        self._motor_por_frase = True
+        return self._decir_con_motor_nuevo(texto)
+
+    def _decir_con_motor_nuevo(self, texto: str) -> bool:
+        """Un motor de usar y tirar para esta frase.
+
+        Más lento, pero inmune a que una interrupción anterior lo haya dejado
+        en mal estado. Es el modo al que se cae cuando el motor compartido da
+        problemas.
+        """
+        try:
+            self._engine = self._crear_motor()
+            self._engine.say(texto)
+            self._engine.runAndWait()
+            self._failures = 0
+            return True
+        except Exception as exc:
+            # Con pythonw.exe no hay consola donde ver esto, asi que el error
+            # se guarda para que la ventana pueda mostrarlo.
+            self.error = f"Error al hablar: {type(exc).__name__}: {exc}"
+            self._failures += 1
+            log.error(self.error, exc_info=True)
+            if self._failures >= 3:
+                self.error = (f"La voz ha fallado {self._failures} veces y se desactiva. "
+                              f"Último error: {exc}")
+                self.enabled = False
+            return False
+        finally:
+            self._desechar_motor()
+
     def _speak_loop(self) -> None:
         while not self._stop_flag.is_set():
             item = self._queue.get()
@@ -335,31 +423,13 @@ class TextToSpeech:
                 self._speaking.set()
                 if self.on_state_change:
                     self.on_state_change(True)
+
                 if self.usando_elevenlabs and self._decir_con_elevenlabs(item):
                     continue
-                if self._engine is None:
-                    # Sin voz de Windows y ElevenLabs caído: no hay plan C.
+                if not TTS_AVAILABLE:
+                    # Sin voz de Windows y ElevenLabs caido: no hay plan C.
                     continue
-                self._engine.say(item)
-                self._engine.runAndWait()
-            except RuntimeError:
-                # "run loop already started": reinicia el motor y sigue.
-                try:
-                    self._engine.endLoop()
-                except Exception:
-                    pass
-                self._init_engine()
-            except Exception as exc:                 # pragma: no cover
-                # Con pythonw.exe no hay consola donde ver esto, asi que el
-                # error se guarda para que la ventana pueda mostrarlo.
-                self.error = f"Error al hablar: {type(exc).__name__}: {exc}"
-                self._failures += 1
-                log.error(self.error, exc_info=True)
-                if self._failures >= 3:
-                    self.error = (f"La voz ha fallado {self._failures} veces y se desactiva. "
-                                  f"Último error: {exc}")
-                    self.enabled = False
-                    break
+                self._decir_con_windows(item)
             finally:
                 self._speaking.clear()
                 if self.on_state_change:
