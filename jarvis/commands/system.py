@@ -92,30 +92,121 @@ class VolumeController:
         return endpoint
 
     def _crear_endpoint(self):
-        """Abre el mezclador. Separado para poder probarlo sin Windows."""
-        from ctypes import cast, POINTER
-        import comtypes
-        from comtypes import CLSCTX_ALL
+        """Abre el mezclador de Windows. Separado para poder probarlo sin él.
 
-        try:
-            from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
-        except ImportError:
-            # Las versiones nuevas de pycaw reorganizaron los modulos. Con
-            # solo el import de siempre, una instalacion correcta parecia
-            # una libreria ausente.
-            from pycaw.utils import AudioUtilities
-            from pycaw.api.endpointvolume import IAudioEndpointVolume
+        pycaw ha cambiado de forma con los años y no de manera compatible:
 
-        # COM hay que inicializarlo EN CADA HILO que lo use. Sin esto, la
-        # llamada falla con «CoInitialize has not been called»: es el mismo
-        # tropiezo que dejaba muda la voz.
+        - En las versiones clasicas, GetSpeakers() devolvia el dispositivo COM
+          en crudo, con su metodo Activate(). Es el codigo que sale en toda la
+          documentacion de internet.
+        - En las nuevas devuelve un objeto AudioDevice que lo envuelve, y ese
+          no tiene Activate. De ahi el «'AudioDevice' object has no attribute
+          'Activate'» que dejaba el volumen en «n/d».
+
+        En vez de apostar por una version concreta, se prueban las formas
+        conocidas y se COMPRUEBA cual funciona de verdad leyendo el volumen.
+        Asi da igual que pycaw vuelva a cambiar: mientras alguna de las vias
+        siga viva, el volumen se lee.
+        """
+        # COM hay que inicializarlo EN CADA HILO que lo use, o la primera
+        # llamada falla con «CoInitialize has not been called». Si ni siquiera
+        # se puede importar comtypes, no se corta aqui: que falle cada via por
+        # su cuenta y asi el mensaje dice cual es el problema de verdad.
         try:
+            import comtypes
             comtypes.CoInitialize()
         except Exception:
             pass
-        devices = AudioUtilities.GetSpeakers()
-        interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-        return cast(interface, POINTER(IAudioEndpointVolume))
+
+        fallos = []
+        for intento in (self._endpoint_clasico, self._endpoint_envuelto,
+                        self._endpoint_directo):
+            try:
+                endpoint = intento()
+            except Exception as exc:
+                fallos.append(f"{intento.__name__}: {type(exc).__name__}: {exc}")
+                continue
+            if endpoint is None:
+                continue
+            # La prueba de fuego: que sepa decir el volumen. Un objeto que
+            # existe pero no responde no sirve de nada.
+            try:
+                endpoint.GetMasterVolumeLevelScalar()
+            except Exception as exc:
+                fallos.append(f"{intento.__name__}: no responde ({exc})")
+                continue
+            return endpoint
+
+        raise OSError("ninguna forma de abrir el mezclador ha funcionado. "
+                      + " | ".join(fallos))
+
+    @staticmethod
+    def _interfaz_volumen():
+        """La interfaz IAudioEndpointVolume, esté donde esté en esta pycaw."""
+        try:
+            from pycaw.pycaw import IAudioEndpointVolume
+        except ImportError:
+            from pycaw.api.endpointvolume import IAudioEndpointVolume
+        return IAudioEndpointVolume
+
+    @staticmethod
+    def _altavoces():
+        """El dispositivo de salida por defecto, tal cual lo dé pycaw."""
+        try:
+            from pycaw.pycaw import AudioUtilities
+        except ImportError:
+            from pycaw.utils import AudioUtilities
+        return AudioUtilities.GetSpeakers()
+
+    def _activar(self, dispositivo):
+        """Pide al dispositivo COM su control de volumen."""
+        from ctypes import cast, POINTER
+        from comtypes import CLSCTX_ALL
+
+        interfaz = self._interfaz_volumen()
+        puntero = dispositivo.Activate(interfaz._iid_, CLSCTX_ALL, None)
+        return cast(puntero, POINTER(interfaz))
+
+    def _endpoint_clasico(self):
+        """pycaw de siempre: GetSpeakers() ya trae el dispositivo COM."""
+        return self._activar(self._altavoces())
+
+    def _endpoint_envuelto(self):
+        """pycaw nueva: GetSpeakers() devuelve un AudioDevice que lo envuelve.
+
+        El dispositivo de verdad está guardado dentro, pero el nombre del
+        atributo ha ido cambiando, así que se busca el primero que sepa
+        hacer Activate en vez de darlo por sentado.
+        """
+        envoltorio = self._altavoces()
+
+        # Algunas versiones ya exponen el control de volumen hecho.
+        for nombre in ("EndpointVolume", "endpoint_volume"):
+            listo = getattr(envoltorio, nombre, None)
+            if listo is not None and hasattr(listo, "GetMasterVolumeLevelScalar"):
+                return listo
+
+        for nombre in ("_dev", "dev", "_device", "device", "_immdevice"):
+            dentro = getattr(envoltorio, nombre, None)
+            if dentro is not None and hasattr(dentro, "Activate"):
+                return self._activar(dentro)
+        return None
+
+    def _endpoint_directo(self):
+        """Sin pasar por los ayudantes de pycaw: se pide a Windows y ya.
+
+        Es lo que hace pycaw por dentro. Si sus envoltorios vuelven a
+        cambiar, esta vía debería seguir funcionando igual.
+        """
+        import comtypes
+        from pycaw.api.mmdeviceapi import IMMDeviceEnumerator
+        from pycaw.constants import CLSID_MMDeviceEnumerator
+
+        enumerador = comtypes.CoCreateInstance(
+            CLSID_MMDeviceEnumerator, IMMDeviceEnumerator,
+            comtypes.CLSCTX_INPROC_SERVER)
+        # 0 = altavoces (eRender), 1 = uso multimedia (eMultimedia).
+        return self._activar(enumerador.GetDefaultAudioEndpoint(0, 1))
 
     @property
     def _endpoint(self):

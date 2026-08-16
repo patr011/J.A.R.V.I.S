@@ -205,3 +205,98 @@ def test_fuera_de_windows_lo_dice_claramente(monkeypatch):
     control = syscmd.VolumeController()
     assert control.get_level() is None
     assert "Windows" in control.error
+
+
+# --------------------------------------------------------------------------
+# pycaw ha cambiado de forma con los años
+# --------------------------------------------------------------------------
+#
+# El fallo real visto en Windows:
+#     AttributeError: 'AudioDevice' object has no attribute 'Activate'
+# El codigo clasico -el que sale en toda la documentacion- dejo de valer
+# cuando GetSpeakers() empezo a devolver un envoltorio.
+
+class DispositivoClasico:
+    """pycaw de siempre: el objeto COM crudo, con su Activate."""
+
+    def __init__(self, mezclador):
+        self._mezclador = mezclador
+
+    def Activate(self, _iid, _ctx, _params):        # noqa: N802 (nombre de COM)
+        return self._mezclador
+
+
+class AudioDeviceNuevo:
+    """pycaw nueva: un envoltorio que NO tiene Activate."""
+
+    def __init__(self, mezclador):
+        self._dev = DispositivoClasico(mezclador)
+        self.id = "{0.0.0.00000000}"
+
+
+class AudioDeviceSinNada:
+    """Un envoltorio que no deja llegar al dispositivo por ningún lado."""
+
+    def __init__(self):
+        self.id = "{0.0.0.00000000}"
+
+
+def _preparar(monkeypatch, altavoces, directo=None):
+    """Monta un VolumeController con la forma de pycaw que se quiera probar."""
+    monkeypatch.setattr(syscmd, "IS_WINDOWS", True)
+    mezclador = MezcladorFalso()
+
+    monkeypatch.setattr(syscmd.VolumeController, "_altavoces",
+                        staticmethod(lambda: altavoces(mezclador)))
+    monkeypatch.setattr(syscmd.VolumeController, "_activar",
+                        lambda self, dispositivo: dispositivo.Activate(None, None, None))
+    monkeypatch.setattr(syscmd.VolumeController, "_endpoint_directo",
+                        lambda self: directo(mezclador) if directo else None)
+    return syscmd.VolumeController()
+
+
+def test_con_la_pycaw_de_siempre_funciona(monkeypatch):
+    control = _preparar(monkeypatch, DispositivoClasico)
+    assert control.get_level() == 42
+
+
+def test_con_la_pycaw_nueva_tambien(monkeypatch):
+    """Este es el fallo del usuario: «AudioDevice no tiene Activate»."""
+    control = _preparar(monkeypatch, AudioDeviceNuevo)
+    assert control.get_level() == 42, "no ha sabido sacar el dispositivo del envoltorio"
+    assert control.error == ""
+
+
+def test_si_los_envoltorios_no_sirven_queda_la_via_directa(monkeypatch):
+    """Si pycaw vuelve a cambiar, se le pide el mezclador a Windows y ya."""
+    control = _preparar(monkeypatch, lambda _: AudioDeviceSinNada(),
+                        directo=lambda mezclador: mezclador)
+    assert control.get_level() == 42
+
+
+def test_si_no_funciona_ninguna_via_se_explica_cual_ha_fallado(monkeypatch):
+    control = _preparar(monkeypatch, lambda _: AudioDeviceSinNada())
+    assert control.get_level() is None
+    assert "ninguna forma" in control.error
+
+
+def test_un_mezclador_que_existe_pero_no_responde_no_cuela(monkeypatch):
+    """Devolver un objeto no basta: tiene que saber decir el volumen.
+
+    Sin comprobarlo, el panel enseñaría «n/d» igualmente pero sin motivo.
+    """
+    class Mudo:
+        def GetMasterVolumeLevelScalar(self):        # noqa: N802
+            raise OSError("el dispositivo no responde")
+
+    monkeypatch.setattr(syscmd, "IS_WINDOWS", True)
+    monkeypatch.setattr(syscmd.VolumeController, "_altavoces",
+                        staticmethod(lambda: DispositivoClasico(Mudo())))
+    monkeypatch.setattr(syscmd.VolumeController, "_activar",
+                        lambda self, d: d.Activate(None, None, None))
+    monkeypatch.setattr(syscmd.VolumeController, "_endpoint_directo",
+                        lambda self: None)
+
+    control = syscmd.VolumeController()
+    assert control.get_level() is None
+    assert "no responde" in control.error

@@ -140,7 +140,7 @@ J.A.R.V.I.S/
 │           ├── hud.py         ← rejilla de fondo y barras de estado
 │           └── waveform.py    ← la onda de audio animada
 │
-└── tests/                   ← 478 pruebas automáticas
+└── tests/                   ← 483 pruebas automáticas
 ```
 
 **La idea de la separación**: `commands/` no sabe nada de la interfaz, `ui/`
@@ -790,8 +790,11 @@ habituales:
 - **Has cambiado de altavoces con el asistente abierto**. Se rehace solo en el
   siguiente refresco; si no, reinícialo.
 
-Si en el diagnóstico aparece un error de COM, tienes el asistente
-desactualizado: `git pull` lo arregla.
+Si el error habla de COM o dice «'AudioDevice' object has no attribute
+'Activate'», tienes el asistente desactualizado: `git pull` lo arregla. Ese
+segundo mensaje sale con las versiones nuevas de pycaw, que cambiaron la
+forma de dar el mezclador y dejaron sin efecto el código que aparece en toda
+la documentación de internet.
 </details>
 
 <details>
@@ -818,7 +821,7 @@ lo apunta en `jarvis.log` y pasa a la voz de Windows.
 
 ## 7. Las pruebas
 
-El proyecto trae 478 pruebas automáticas. Si tocas el código, ejecútalas
+El proyecto trae 483 pruebas automáticas. Si tocas el código, ejecútalas
 antes de dar nada por bueno:
 
 ```bat

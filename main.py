@@ -318,6 +318,8 @@ def main() -> int:
                         help="comprobar librerías, Ollama, micrófono y hardware")
     parser.add_argument("--voces", action="store_true",
                         help="listar las voces de texto a voz disponibles")
+    parser.add_argument("--cerebro", action="store_true",
+                        help="escribir que cerebro esta configurado (claude u ollama)")
     parser.add_argument("--modelo", metavar="NOMBRE",
                         help="usar este modelo de Ollama en esta ejecución")
     parser.add_argument("--version", action="version", version=f"J.A.R.V.I.S. {__version__}")
@@ -335,6 +337,14 @@ def main() -> int:
     if args.modelo:
         config.set("ollama.model", args.modelo)
         config.save()
+
+    if args.cerebro:
+        # Lo usa ejecutar.bat para saber si merece la pena arrancar Ollama.
+        # Escribe una sola palabra y nada mas, para poder leerla desde un
+        # archivo por lotes sin tener que interpretar nada.
+        from jarvis.core.llm import current_provider
+        print(current_provider())
+        return 0
 
     if args.check:
         return run_diagnostics()
